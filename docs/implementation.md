@@ -2,7 +2,7 @@
 
 ## Behavior
 
-The Codex skill writes long-lived repository knowledge into an Obsidian vault under:
+The skill writes long-lived repository knowledge into an Obsidian vault under:
 
 ```text
 {vault_path}/{wiki_dir}/{project-name}/
@@ -17,27 +17,31 @@ The script supports:
 
 All writes go through `scripts/obsidian_wiki.py`; agents should not edit wiki documents directly.
 
-## Codex Adaptation
+## Agent Package
 
-The implementation follows the Forge skill behavior but changes Codex-specific paths:
+The repository builds one agent-agnostic skill package. The same `SKILL.md`, `config.json`, and `scripts/obsidian_wiki.py` are copied to each supported agent location:
 
-- Global install path: `/Users/christian/.codex/skills/obsidian-wiki`
-- Project override config: `.codex/obsidian-wiki.json`
-- Installed command examples in `SKILL.md` use the Codex global skill path.
+- Codex: `~/.codex/skills/obsidian-wiki`
+- Claude Code: `~/.claude/skills/obsidian-wiki`
+- ForgeCode: `~/.forge/skills/obsidian-wiki`
+
+The skill instructions avoid agent-specific paths. Agents should resolve the script relative to the loaded skill directory.
 
 ## Configuration
 
 Config precedence:
 
 1. `OBSIDIAN_VAULT_PATH` overrides only `vault_path`.
-2. `.codex/obsidian-wiki.json` overrides skill defaults for the active project.
-3. `config.json` in the installed skill directory provides local defaults.
+2. `.agents/obsidian-wiki.json` overrides skill defaults for the active project.
+3. `.codex/obsidian-wiki.json` is supported as a legacy project override.
+4. `.claude/obsidian-wiki.json` is supported as a legacy project override.
+5. `config.json` in the installed skill directory provides local defaults.
 
 The script rejects writes outside the configured vault root.
 
 ## Installation
 
-`Taskfile.dev.yml` copies only runtime files into Codex's global skills directory:
+`Taskfile.yml` first builds `dist/obsidian-wiki`, then copies only runtime files into the selected agent skill directory:
 
 - `SKILL.md`
 - `config.json`

@@ -1,0 +1,86 @@
+version: "3"
+
+vars:
+  SKILL_NAME: obsidian-wiki
+  HOME_DIR:
+    sh: printf %s "$HOME"
+  BUILD_ROOT: dist
+  BUILD_DIR: "{{.BUILD_ROOT}}/{{.SKILL_NAME}}"
+  CODEX_SKILLS_DIR: "{{.HOME_DIR}}/.codex/skills"
+  CLAUDE_SKILLS_DIR: "{{.HOME_DIR}}/.claude/skills"
+  FORGE_SKILLS_DIR: "{{.HOME_DIR}}/.forge/skills"
+
+tasks:
+  build:
+    desc: Build the agent-agnostic skill package
+    run: once
+    cmds:
+      - rm -rf "{{.BUILD_DIR}}"
+      - mkdir -p "{{.BUILD_DIR}}/scripts"
+      - cp SKILL.md config.json "{{.BUILD_DIR}}/"
+      - cp scripts/obsidian_wiki.py "{{.BUILD_DIR}}/scripts/"
+
+  install:
+    desc: Install the skill for Codex, Claude Code, and ForgeCode
+    cmds:
+      - task: build
+      - task: install:codex
+      - task: install:claude
+      - task: install:forge
+
+  install:codex:
+    desc: Install the skill into the local Codex skills directory
+    deps: [build]
+    cmds:
+      - mkdir -p "{{.CODEX_SKILLS_DIR}}"
+      - rm -rf "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}"
+      - cp -R "{{.BUILD_DIR}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}"
+
+  install:claude:
+    desc: Install the skill into the local Claude Code skills directory
+    deps: [build]
+    cmds:
+      - mkdir -p "{{.CLAUDE_SKILLS_DIR}}"
+      - rm -rf "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}"
+      - cp -R "{{.BUILD_DIR}}" "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}"
+
+  install:forge:
+    desc: Install the skill into the local ForgeCode skills directory
+    deps: [build]
+    cmds:
+      - mkdir -p "{{.FORGE_SKILLS_DIR}}"
+      - rm -rf "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}"
+      - cp -R "{{.BUILD_DIR}}" "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}"
+
+  verify:
+    desc: Verify the built skill package and script entrypoint
+    deps: [build]
+    cmds:
+      - test -f "{{.BUILD_DIR}}/SKILL.md"
+      - test -f "{{.BUILD_DIR}}/config.json"
+      - test -f "{{.BUILD_DIR}}/scripts/obsidian_wiki.py"
+      - python "{{.BUILD_DIR}}/scripts/obsidian_wiki.py" --help
+
+  verify:codex:
+    desc: Verify the Codex installation
+    cmds:
+      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/SKILL.md"
+      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
+      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py"
+      - python "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py" --help
+
+  verify:claude:
+    desc: Verify the Claude Code installation
+    cmds:
+      - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/SKILL.md"
+      - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
+      - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py"
+      - python "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py" --help
+
+  verify:forge:
+    desc: Verify the ForgeCode installation
+    cmds:
+      - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/SKILL.md"
+      - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
+      - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py"
+      - python "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py" --help

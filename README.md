@@ -1,46 +1,72 @@
-# Obsidian Wiki Codex Skill
+# Obsidian Wiki Skill
 
-This repository is the source of truth for the local Codex `obsidian-wiki` skill.
+This repository is the source of truth for the local `obsidian-wiki` Agent Skill.
 
-The skill persists codebase knowledge into an Obsidian vault as per-repository wiki documents. It mirrors the behavior of the related Claude and Forge skills while using Codex-specific installation and project override paths.
+The skill persists codebase knowledge into an Obsidian vault as per-repository wiki documents. The same skill package can be installed for Codex, Claude Code, and ForgeCode.
 
 ## Layout
 
-- `SKILL.md`: Codex skill manifest and operating instructions.
+- `SKILL.md`: agent-agnostic skill manifest and operating instructions.
 - `scripts/obsidian_wiki.py`: deterministic scan/read/create/update tool for wiki documents.
 - `config.json`: local default configuration used by the installed skill.
 - `config.example.json`: portable configuration template.
 - `docs/`: project documentation for maintainers.
-- `Taskfile.dev.yml`: local development tasks.
+- `Taskfile.yml`: local development tasks.
 
-## Install
+## Build
 
 Run:
 
 ```bash
-task -t Taskfile.dev.yml install
+task build
 ```
 
-The install task copies runtime files into:
+The build task creates:
 
 ```text
-/Users/christian/.codex/skills/obsidian-wiki
+dist/obsidian-wiki
 ```
 
-Restart Codex after installing or changing the skill so the skill manifest is reloaded.
+Only runtime files are copied into the package.
+
+## Install
+
+Install for all supported agents:
+
+```bash
+task install
+```
+
+Or install one target:
+
+```bash
+task install:codex
+task install:claude
+task install:forge
+```
+
+The install targets copy the same built package into:
+
+```text
+~/.codex/skills/obsidian-wiki
+~/.claude/skills/obsidian-wiki
+~/.forge/skills/obsidian-wiki
+```
+
+Restart the target agent after installing or changing the skill so the skill manifest is reloaded.
 
 ## Verify
 
 Run:
 
 ```bash
-task -t Taskfile.dev.yml verify
+task verify
 ```
 
-You can also run the installed script directly:
+You can also run the built or installed script directly:
 
 ```bash
-python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py --help
+python dist/obsidian-wiki/scripts/obsidian_wiki.py --help
 ```
 
 ## Configuration
@@ -48,8 +74,10 @@ python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py --h
 Configuration resolves in this order:
 
 1. `OBSIDIAN_VAULT_PATH`
-2. project-local `.codex/obsidian-wiki.json`
-3. installed skill-local `config.json`
+2. project-local `.agents/obsidian-wiki.json`
+3. project-local `.codex/obsidian-wiki.json` for backward compatibility
+4. project-local `.claude/obsidian-wiki.json` for backward compatibility
+5. installed skill-local `config.json`
 
 Default configuration targets:
 
@@ -60,7 +88,8 @@ Default configuration targets:
 ## Update Workflow
 
 1. Edit the source files in this repository.
-2. Run `task -t Taskfile.dev.yml install`.
-3. Start a new Codex session.
+2. Run `task verify`.
+3. Run `task install`.
+4. Start a new agent session.
 
 The installed skill is a copied directory, so repository changes are not reflected globally until the install task runs again.

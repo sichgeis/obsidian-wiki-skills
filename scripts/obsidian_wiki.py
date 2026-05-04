@@ -16,6 +16,11 @@ from typing import Any
 SCRIPT_PATH = Path(__file__).resolve()
 SKILL_DIR = SCRIPT_PATH.parent.parent
 SKILL_CONFIG_PATH = SKILL_DIR / "config.json"
+PROJECT_CONFIG_RELATIVE_PATHS = [
+    Path(".agents") / "obsidian-wiki.json",
+    Path(".codex") / "obsidian-wiki.json",
+    Path(".claude") / "obsidian-wiki.json",
+]
 DEFAULT_CONFIG = {
     "wiki_dir": "Wiki",
     "default_tags": ["wiki"],
@@ -88,19 +93,21 @@ def discover_project_root(start: Path | None = None) -> Path:
         pass
 
     for path in [candidate, *candidate.parents]:
-        if (path / ".codex" / "obsidian-wiki.json").exists() or (path / ".git").exists():
+        has_project_config = any((path / config_path).exists() for config_path in PROJECT_CONFIG_RELATIVE_PATHS)
+        if has_project_config or (path / ".git").exists():
             return path
 
     return candidate
 
 
-def project_config_path(project_root: Path) -> Path:
-    return project_root / ".codex" / "obsidian-wiki.json"
+def project_config_paths(project_root: Path) -> list[Path]:
+    return [project_root / config_path for config_path in PROJECT_CONFIG_RELATIVE_PATHS]
 
 
 def resolve_config(project_root: Path) -> Config:
     merged: dict[str, Any] = deep_merge(DEFAULT_CONFIG, load_json(SKILL_CONFIG_PATH))
-    merged = deep_merge(merged, load_json(project_config_path(project_root)))
+    for config_path in reversed(project_config_paths(project_root)):
+        merged = deep_merge(merged, load_json(config_path))
 
     env_vault = os.getenv("OBSIDIAN_VAULT_PATH")
     if env_vault:
@@ -109,7 +116,8 @@ def resolve_config(project_root: Path) -> Config:
     vault_path = merged.get("vault_path")
     if not vault_path:
         raise WikiError(
-            "Missing vault_path. Set OBSIDIAN_VAULT_PATH or add it to .codex/obsidian-wiki.json or the skill config."
+            "Missing vault_path. Set OBSIDIAN_VAULT_PATH, add it to "
+            ".agents/obsidian-wiki.json, or add it to the skill config."
         )
 
     wiki_dir = merged.get("wiki_dir") or DEFAULT_CONFIG["wiki_dir"]

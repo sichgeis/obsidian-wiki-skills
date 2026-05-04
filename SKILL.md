@@ -10,6 +10,7 @@ Use this skill when a user wants persistent repository knowledge written into th
 ## Required behavior
 
 - Never write wiki notes directly. Use `scripts/obsidian_wiki.py` for scan, read, create, and update operations.
+- Resolve `scripts/obsidian_wiki.py` relative to this skill directory when the current working directory is not the installed skill directory.
 - Run the script from the project you want to document, or pass `--project` when you need to override the detected project name.
 - Keep wiki pages organized under `{vault_path}/{wiki_dir}/{project-name}/`.
 - Detect the project name automatically unless the repository needs an explicit `--project` override.
@@ -24,8 +25,10 @@ Use this skill when a user wants persistent repository knowledge written into th
 Configuration resolves in this order:
 
 1. `OBSIDIAN_VAULT_PATH` environment variable for `vault_path`
-2. `.codex/obsidian-wiki.json` in the active project
-3. `config.json` in this skill directory
+2. `.agents/obsidian-wiki.json` in the active project
+3. `.codex/obsidian-wiki.json` in the active project for backward compatibility
+4. `.claude/obsidian-wiki.json` in the active project for backward compatibility
+5. `config.json` in this skill directory
 
 Defaults installed with this skill:
 
@@ -43,32 +46,32 @@ Defaults installed with this skill:
 
 ## Commands
 
-Run the installed script from the project you want to document:
+Run the installed script from the project you want to document. Replace `/path/to/obsidian-wiki` with this skill directory when needed:
 
 ```bash
-python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py scan [--query "authentication flow"]
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py scan [--query "authentication flow"]
 ```
 
 ```bash
-python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py read --path "Wiki/my-project/authentication-flow.md"
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py read --path "Wiki/my-project/authentication-flow.md"
 ```
 
 ```bash
-python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py create \
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py create \
   --title "Authentication Flow" \
   --content-file /absolute/path/to/content.md \
   --tag auth
 ```
 
 ```bash
-python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py update \
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py update \
   --path "Wiki/my-project/authentication-flow.md" \
   --mode append \
   --content-file /absolute/path/to/content.md
 ```
 
 ```bash
-python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py update \
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py update \
   --path "Wiki/my-project/authentication-flow.md" \
   --mode replace \
   --section "Session Handling" \
@@ -85,4 +88,4 @@ python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py upd
 - All resolved paths are constrained to the configured vault root.
 - Writes are atomic to avoid partial documents.
 
-After creating or updating this skill, start a new Codex session so Codex can load the updated skill manifest.
+After creating or updating this skill, restart the coding agent so it can load the updated skill manifest.
