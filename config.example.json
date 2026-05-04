@@ -1,0 +1,9 @@
+{
+  "vault_path": "/path/to/your/obsidian/vault",
+  "wiki_dir": "Wiki",
+  "default_tags": ["wiki"],
+  "redaction": {
+    "enabled": true,
+    "patterns": ["API_KEY", "SECRET", "TOKEN", "PASSWORD"]
+  }
+}
