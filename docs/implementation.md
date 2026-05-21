@@ -62,7 +62,24 @@ Codex should run the installed script directly with this reusable command prefix
 python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py
 ```
 
-Codex approvals are command-prefix based, not skill-name based. This repository cannot declare a semantic "allow all obsidian-wiki skill calls" rule by itself. Approving the installed script prefix allows repeated `scan`, `read`, `create`, `update`, `index`, and `doctor` calls through that exact prefix without asking again.
+Codex approvals are command-prefix based, not skill-name based. This repository cannot declare a semantic "allow all obsidian-wiki skill calls" rule by itself. For durable allowlisting, configure Codex Rules outside the skill, for example in `~/.codex/rules/default.rules`:
+
+```starlark
+prefix_rule(
+    pattern = ["python", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"],
+    decision = "allow",
+    justification = "Allow the vetted Obsidian wiki skill helper without repeated prompts",
+    match = [
+        "python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py scan",
+        "python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py index status",
+    ],
+    not_match = [
+        "python /Users/christian/.codex/skills/obsidian-wiki/scripts/other.py",
+    ],
+)
+```
+
+This allowlist trusts commands that start with the matching script prefix. It does not inspect every file write, network call, or subprocess inside the Python process, so the helper should remain small, deterministic, and constrained to the configured vault.
 
 `SKILL.md` tells Codex to prefer inline `--content` for create and update operations. That keeps the workflow to a single Python command and avoids an extra approval for creating a temporary Markdown file. `--content-file` remains available for very large notes or content that is impractical to pass as one shell argument.
 

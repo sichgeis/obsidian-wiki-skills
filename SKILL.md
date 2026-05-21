@@ -56,7 +56,9 @@ When running under Codex, minimize approval prompts:
 - Prefer `--content` for create and update operations so Codex can run one approved Python command without creating a temporary content file first.
 - Use `--content-file` only when inline shell quoting or command length makes `--content` impractical.
 - If Codex asks for command approval, allow the prefix `python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py` for future runs.
-- Codex approvals are command-prefix based, not skill-name based. There is no separate skill-level whitelist in this repository; approving the installed script prefix covers scan, read, create, update, index, and doctor calls made through that prefix.
+- Codex approvals are command-prefix based, not skill-name based. There is no separate skill-level whitelist in this repository; durable allowlisting belongs in Codex Rules, for example `~/.codex/rules/default.rules`.
+- A suitable Codex Rule is `prefix_rule(pattern = ["python", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"], decision = "allow", ...)`. Restart Codex after adding or changing rules.
+- Treat such a rule as trust in this script invocation, not as fine-grained inspection of every internal Python file write or subprocess.
 
 ## Slash command workflow
 

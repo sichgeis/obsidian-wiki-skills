@@ -78,7 +78,28 @@ For fast documentation runs in Codex, approve this command prefix when prompted:
 python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py
 ```
 
-Codex approvals are command-prefix based, not skill-name based. There is no separate "allow this whole skill" switch in the skill itself. Approving the installed script prefix lets Codex reuse that approval for `scan`, `read`, `create`, `update`, `index`, and `doctor` calls that use the same command prefix.
+Codex approvals are command-prefix based, not skill-name based. There is no separate "allow this whole skill" switch in `SKILL.md`; permission belongs in Codex's sandbox, approval policy, and rules configuration.
+
+To make the permission durable, add a Codex rule in `~/.codex/rules/default.rules` and restart Codex:
+
+```starlark
+prefix_rule(
+    pattern = ["python", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"],
+    decision = "allow",
+    justification = "Allow the vetted Obsidian wiki skill helper without repeated prompts",
+    match = [
+        "python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py scan",
+        "python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py index status",
+        "python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py doctor",
+    ],
+    not_match = [
+        "python /Users/christian/.codex/skills/other-skill/scripts/obsidian_wiki.py scan",
+        "python /Users/christian/.codex/skills/obsidian-wiki/scripts/other.py",
+    ],
+)
+```
+
+This trusts invocations of that helper script through the matching prefix; it is not a fine-grained audit of every file write or subprocess inside Python. Keep the helper small, deterministic, and path-constrained.
 
 The skill instructions prefer inline `--content` for create and update operations, which avoids a separate temporary-file creation step. Use `--content-file` only for notes that are too large or awkward to quote inline.
 
