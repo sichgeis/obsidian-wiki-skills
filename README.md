@@ -82,6 +82,8 @@ Codex approvals are command-prefix based, not skill-name based. There is no sepa
 
 To make the permission durable, add a Codex rule in `~/.codex/rules/default.rules` and restart Codex:
 
+You can also ask the coding agent to add or update this allow rule for you. The agent can edit the rules file and run the required setup commands, subject to the normal approval prompts for changing Codex configuration.
+
 ```starlark
 prefix_rule(
     pattern = ["python", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"],
