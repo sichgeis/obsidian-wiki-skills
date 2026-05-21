@@ -345,6 +345,49 @@ class ArchiveDocumentTest(WikiTestCase):
         self.assertTrue((self.vault_path / "Wiki" / "_archive" / "demo").exists())
         self.assertTrue((self.vault_path / "Wiki" / "_archive" / "demo" / "second-ticket.md").exists())
 
+    def test_archive_cleanup_removes_empty_project_and_archive_directories(self) -> None:
+        active_empty = self.vault_path / "Wiki" / "demo" / "empty" / "nested"
+        archive_empty = self.vault_path / "Wiki" / "_archive" / "demo" / "empty"
+        active_empty.mkdir(parents=True)
+        archive_empty.mkdir(parents=True)
+
+        result = obsidian_wiki.cleanup_empty_directories(self.config, "demo")
+
+        self.assertEqual(result["scope"], "project")
+        self.assertEqual(result["project"], "demo")
+        self.assertEqual(result["removed_count"], 5)
+        self.assertFalse((self.vault_path / "Wiki" / "demo").exists())
+        self.assertFalse((self.vault_path / "Wiki" / "_archive" / "demo").exists())
+        self.assertTrue((self.vault_path / "Wiki").exists())
+        self.assertTrue((self.vault_path / "Wiki" / "_archive").exists())
+
+    def test_archive_cleanup_keeps_non_empty_directories(self) -> None:
+        path = self.create_article("Remaining Note", "Body", ["ticket"])
+        empty_archive = self.vault_path / "Wiki" / "_archive" / "demo" / "empty"
+        empty_archive.mkdir(parents=True)
+
+        result = obsidian_wiki.cleanup_empty_directories(self.config, "demo")
+
+        self.assertEqual(result["removed_directories"], ["Wiki/_archive/demo", "Wiki/_archive/demo/empty"])
+        self.assertTrue(path.exists())
+        self.assertTrue((self.vault_path / "Wiki" / "demo").exists())
+
+    def test_archive_cleanup_global_removes_empty_directories_across_projects(self) -> None:
+        (self.vault_path / "Wiki" / "demo" / "empty").mkdir(parents=True)
+        (self.vault_path / "Wiki" / "other" / "empty").mkdir(parents=True)
+        kept_path = self.vault_path / "Wiki" / "kept" / "note.md"
+        kept_path.parent.mkdir(parents=True)
+        kept_path.write_text("Body")
+
+        result = obsidian_wiki.cleanup_empty_directories(self.config, "demo", global_scope=True)
+
+        self.assertEqual(result["scope"], "global")
+        self.assertIsNone(result["project"])
+        self.assertFalse((self.vault_path / "Wiki" / "demo").exists())
+        self.assertFalse((self.vault_path / "Wiki" / "other").exists())
+        self.assertTrue(kept_path.exists())
+        self.assertTrue((self.vault_path / "Wiki").exists())
+
     def test_restore_fails_when_destination_exists(self) -> None:
         path = self.create_article("Old Ticket", "Body", ["ticket"])
         archive_result = obsidian_wiki.archive_document(self.config, str(path.relative_to(self.vault_path)), "old")

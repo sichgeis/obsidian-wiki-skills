@@ -59,6 +59,7 @@ Use archive when old notes are superseded but still worth preserving.
 4. Review candidate titles, tags, paths, and reasons with the user when archiving is not explicitly requested for a path.
 5. Archive only explicit selected paths with `archive apply --path "Wiki/project/note.md" --reason "..."`.
 6. Restore with `archive restore --path "Wiki/_archive/project/note.md"` when needed.
+7. Remove leftover empty active/archive folders with `archive cleanup`; pass `--global` only when explicitly cleaning all wiki project folders.
 
 Archived notes move to `Wiki/_archive/{project}/`, keep their content, and are excluded from normal scan results. Empty active project folders are removed after archive, and restore recreates the original folder while cleaning up empty archive project folders. Use `scan --include-archived` for explicit archived lookup.
 
@@ -170,6 +171,14 @@ python /path/to/obsidian-wiki/scripts/obsidian_wiki.py archive restore \
 ```
 
 ```bash
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py archive cleanup
+```
+
+```bash
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py archive cleanup --global
+```
+
+```bash
 python /path/to/obsidian-wiki/scripts/obsidian_wiki.py doctor
 ```
 
@@ -181,6 +190,7 @@ python /path/to/obsidian-wiki/scripts/obsidian_wiki.py doctor
 - `archive candidates` is read-only and suggests old notes by `updated` timestamp and tags. It scans the active project by default; pass `--global` to scan all active project wiki folders. Durable notes are excluded unless `--force` is passed.
 - `archive apply` moves an active note to `Wiki/_archive/{project}/`, writes archive frontmatter, and removes the active project folder when it becomes empty.
 - `archive restore` moves an archived note back to its recorded `original_path`, recreating the original folder as needed and removing the archive project folder when it becomes empty.
+- `archive cleanup` removes empty active and archived project folders without moving notes. By default it checks only the detected project; `--global` checks every wiki project folder.
 - `index status` and `doctor` help diagnose missing or stale indexes and resolved configuration.
 - The script detects the active project from the current working directory and its git root, unless `--project` is provided.
 - `read` returns the full Markdown document.

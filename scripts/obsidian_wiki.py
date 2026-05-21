@@ -872,6 +872,33 @@ def remove_empty_directory(directory: Path, protected_directories: set[Path]) ->
     return True
 
 
+def cleanup_empty_directories(config: Config, project_name: str, global_scope: bool = False) -> dict[str, Any]:
+    root = wiki_root_dir(config)
+    archive_root = wiki_archive_dir(config)
+    protected_directories = {root, archive_root}
+    candidate_roots = [root] if global_scope else [wiki_project_dir(config, project_name), wiki_archive_project_dir(config, project_name)]
+    candidates: list[Path] = []
+
+    for candidate_root in candidate_roots:
+        if not candidate_root.exists() or not candidate_root.is_dir():
+            continue
+        candidates.extend(path for path in candidate_root.rglob("*") if path.is_dir())
+        candidates.append(candidate_root)
+
+    unique_candidates = sorted({path.resolve() for path in candidates}, key=lambda path: len(path.parts), reverse=True)
+    removed_paths: list[str] = []
+    for candidate in unique_candidates:
+        if remove_empty_directory(candidate, protected_directories):
+            removed_paths.append(str(candidate.relative_to(config.vault_path)))
+
+    return {
+        "scope": "global" if global_scope else "project",
+        "project": None if global_scope else project_name,
+        "removed_directories": sorted(removed_paths),
+        "removed_count": len(removed_paths),
+    }
+
+
 def archive_document(config: Config, path_arg: str, reason: str | None) -> dict[str, Any]:
     source_path = resolve_doc_path(config, path_arg)
     if not source_path.exists():
@@ -1062,6 +1089,8 @@ def build_parser() -> argparse.ArgumentParser:
     archive_apply_parser.add_argument("--reason", help="Reason stored in archive frontmatter.")
     archive_restore_parser = archive_subparsers.add_parser("restore", help="Restore one archived wiki note to its original path.")
     archive_restore_parser.add_argument("--path", required=True, help="Archived wiki document path relative to the vault root.")
+    archive_cleanup_parser = archive_subparsers.add_parser("cleanup", help="Remove empty active and archived wiki folders.")
+    archive_cleanup_parser.add_argument("--global", dest="global_scope", action="store_true", help="Remove empty folders across all wiki project folders.")
     archive_subparsers.add_parser("status", help="Show active and archived note counts for the project.")
 
     subparsers.add_parser("doctor", help="Show resolved project, configuration, vault, and index diagnostics.")
@@ -1151,6 +1180,9 @@ def main() -> int:
                 return 0
             if args.archive_command == "restore":
                 print(json.dumps(restore_document(config, args.path), indent=2))
+                return 0
+            if args.archive_command == "cleanup":
+                print(json.dumps(cleanup_empty_directories(config, project_name, args.global_scope), indent=2))
                 return 0
             if args.archive_command == "status":
                 print(json.dumps(archive_status(config, project_name), indent=2))

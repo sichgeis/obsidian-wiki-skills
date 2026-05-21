@@ -161,7 +161,14 @@ python dist/obsidian-wiki/scripts/obsidian_wiki.py archive restore \
   --path "Wiki/_archive/my-project/old-ticket.md"
 ```
 
-Archived notes move to `Wiki/_archive/{project}/`, keep their content, and get archive metadata in frontmatter. Empty active project folders are removed after archive, and restore recreates the original folder while cleaning up empty archive project folders. Normal `scan` excludes archived notes; use `scan --include-archived` to find them explicitly.
+Remove leftover empty folders for the detected project, or across all wiki project folders:
+
+```bash
+python dist/obsidian-wiki/scripts/obsidian_wiki.py archive cleanup
+python dist/obsidian-wiki/scripts/obsidian_wiki.py archive cleanup --global
+```
+
+Archived notes move to `Wiki/_archive/{project}/`, keep their content, and get archive metadata in frontmatter. Empty active project folders are removed after archive, and restore recreates the original folder while cleaning up empty archive project folders. `archive cleanup` removes leftover empty active and archived project folders without moving notes. Normal `scan` excludes archived notes; use `scan --include-archived` to find them explicitly.
 
 ## Verify
 
