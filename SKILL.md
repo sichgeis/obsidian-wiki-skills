@@ -9,7 +9,7 @@ Use this skill when a user wants persistent repository knowledge written into th
 
 ## Required behavior
 
-- Never write wiki notes directly. Use `scripts/obsidian_wiki.py` for scan, read, create, and update operations.
+- Never write wiki notes directly. Use `scripts/obsidian_wiki.py` for scan, read, create, update, archive, and restore operations.
 - Resolve `scripts/obsidian_wiki.py` relative to this skill directory when the current working directory is not the installed skill directory.
 - Run the script from the project you want to document, or pass `--project` when you need to override the detected project name.
 - Keep wiki pages organized under `{vault_path}/{wiki_dir}/{project-name}/`.
@@ -18,6 +18,7 @@ Use this skill when a user wants persistent repository knowledge written into th
 - If a likely match exists, read it before deciding whether to update or create.
 - Update existing notes automatically when they already cover the topic. Create a new note only when no good match exists.
 - Prefer indexed scan results when available. Rebuild the index with `index rebuild` when `index status` or `doctor` reports it as missing or stale.
+- Archive stale notes only through explicit `archive apply --path ...`; use `archive candidates` for review, and do not bulk-archive without selected paths.
 - Preserve concise, useful Markdown. The body is free-form, so choose headings and structure that fit the topic.
 - Created notes get a generated `# Title` heading. If create content already starts with the same H1, the tool removes that duplicate heading automatically.
 - Expect secret redaction to run automatically before content is written.
@@ -47,6 +48,19 @@ Defaults installed with this skill:
 5. Write the final note content.
 
 Use full-document rewrite only when the existing note is stale enough that appending or replacing one section would leave misleading old content behind.
+
+## Archive workflow
+
+Use archive when old notes are superseded but still worth preserving.
+
+1. Run `archive candidates --older-than-days 90` to list old notes for the active project.
+2. If the user asks to archive globally, across all projects, or all wiki notes, run candidates with `--global`.
+3. Durable notes tagged as project overviews, architecture, runbooks, or glossary entries are excluded from normal candidates. If the user explicitly says to force archiving, run candidates with `--force`.
+4. Review candidate titles, tags, paths, and reasons with the user when archiving is not explicitly requested for a path.
+5. Archive only explicit selected paths with `archive apply --path "Wiki/project/note.md" --reason "..."`.
+6. Restore with `archive restore --path "Wiki/_archive/project/note.md"` when needed.
+
+Archived notes move to `Wiki/_archive/{project}/`, keep their content, and are excluded from normal scan results. Use `scan --include-archived` for explicit archived lookup.
 
 ## Codex Permission Behavior
 
@@ -133,14 +147,40 @@ python /path/to/obsidian-wiki/scripts/obsidian_wiki.py index status
 ```
 
 ```bash
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py archive candidates --older-than-days 90
+```
+
+```bash
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py archive candidates --older-than-days 90 --global
+```
+
+```bash
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py archive candidates --older-than-days 90 --force
+```
+
+```bash
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py archive apply \
+  --path "Wiki/my-project/old-ticket.md" \
+  --reason "superseded by current runbook"
+```
+
+```bash
+python /path/to/obsidian-wiki/scripts/obsidian_wiki.py archive restore \
+  --path "Wiki/_archive/my-project/old-ticket.md"
+```
+
+```bash
 python /path/to/obsidian-wiki/scripts/obsidian_wiki.py doctor
 ```
 
 ## Notes
 
 - `scan` returns compact JSON with titles, tags, vault-relative paths, updated timestamps, and indexed match scores/reasons when an index exists.
-- `scan` uses `{vault_path}/{wiki_dir}/.obsidian-wiki-index.json` when present and falls back to direct project Markdown scanning when absent.
+- `scan` uses `{vault_path}/{wiki_dir}/.obsidian-wiki-index.json` when present and falls back to direct project Markdown scanning when absent. It excludes archived notes unless `--include-archived` is passed.
 - `index rebuild` refreshes the lightweight search index from all project wiki Markdown documents.
+- `archive candidates` is read-only and suggests old notes by `updated` timestamp and tags. It scans the active project by default; pass `--global` to scan all active project wiki folders. Durable notes are excluded unless `--force` is passed.
+- `archive apply` moves an active note to `Wiki/_archive/{project}/` and writes archive frontmatter.
+- `archive restore` moves an archived note back to its recorded `original_path`.
 - `index status` and `doctor` help diagnose missing or stale indexes and resolved configuration.
 - The script detects the active project from the current working directory and its git root, unless `--project` is provided.
 - `read` returns the full Markdown document.

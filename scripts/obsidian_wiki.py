@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,9 @@ INDEX_FILENAME = ".obsidian-wiki-index.json"
 INDEX_VERSION = 1
 MAX_INDEX_EXCERPT_CHARS = 600
 MAX_SCAN_RESULTS = 20
+ARCHIVE_DIRNAME = "_archive"
+ARCHIVE_DURABLE_TAGS = {"project-overview", "architecture", "runbook", "glossary"}
+ARCHIVE_BOOST_TAGS = {"ticket", "review", "investigation", "refinement"}
 
 
 class WikiError(Exception):
@@ -58,6 +61,7 @@ class Document:
     created: str | None
     updated: str | None
     body: str
+    frontmatter: dict[str, Any]
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -188,8 +192,27 @@ def wiki_project_dir(config: Config, project_name: str) -> Path:
     return ensure_within(config.vault_path, project_dir)
 
 
+def wiki_archive_dir(config: Config) -> Path:
+    return ensure_within(config.vault_path, wiki_root_dir(config) / ARCHIVE_DIRNAME)
+
+
+def wiki_archive_project_dir(config: Config, project_name: str) -> Path:
+    return ensure_within(config.vault_path, wiki_archive_dir(config) / project_name)
+
+
 def wiki_root_dir(config: Config) -> Path:
     return ensure_within(config.vault_path, config.vault_path / config.wiki_dir)
+
+
+def wiki_project_names(config: Config) -> list[str]:
+    root = wiki_root_dir(config)
+    if not root.exists():
+        return []
+    return sorted(
+        path.name
+        for path in root.iterdir()
+        if path.is_dir() and path.name != ARCHIVE_DIRNAME
+    )
 
 
 def index_path(config: Config) -> Path:
@@ -233,7 +256,18 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
 
 def format_frontmatter(data: dict[str, Any]) -> str:
     lines = ["---"]
-    for key in ["title", "created", "updated", "project", "tags"]:
+    ordered_keys = [
+        "title",
+        "created",
+        "updated",
+        "project",
+        "archived",
+        "archived_at",
+        "archived_reason",
+        "original_path",
+        "tags",
+    ]
+    for key in ordered_keys:
         value = data.get(key)
         if key == "tags":
             lines.append("tags:")
@@ -241,6 +275,8 @@ def format_frontmatter(data: dict[str, Any]) -> str:
                 lines.append(f"  - {tag}")
             continue
         if value is not None:
+            if isinstance(value, bool):
+                value = str(value).lower()
             lines.append(f"{key}: {value}")
     lines.append("---")
     return "\n".join(lines)
@@ -311,7 +347,16 @@ def load_document(path: Path, vault_root: Path) -> Document:
         created=frontmatter.get("created"),
         updated=frontmatter.get("updated"),
         body=body,
+        frontmatter=frontmatter,
     )
+
+
+def frontmatter_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.casefold() in {"true", "yes", "1"}
+    return False
 
 
 def tokenize(value: str) -> list[str]:
@@ -342,6 +387,7 @@ def make_excerpt(body: str) -> str:
 
 def index_entry_for_document(doc: Document) -> dict[str, Any]:
     source_text = " ".join([doc.relative_path, doc.title, *doc.tags, *extract_headings(doc.body), doc.body])
+    archived = frontmatter_bool(doc.frontmatter.get("archived")) or f"/{ARCHIVE_DIRNAME}/" in f"/{doc.relative_path}"
     return {
         "path": doc.relative_path,
         "project": doc.project,
@@ -353,7 +399,24 @@ def index_entry_for_document(doc: Document) -> dict[str, Any]:
         "tokens": sorted(set(tokenize(source_text))),
         "ticket_ids": extract_ticket_ids(source_text),
         "mtime_ns": doc.path.stat().st_mtime_ns,
+        "archived": archived,
+        "original_path": doc.frontmatter.get("original_path"),
+        "archived_at": doc.frontmatter.get("archived_at"),
+        "archived_reason": doc.frontmatter.get("archived_reason"),
     }
+
+
+def iter_wiki_markdown_paths(config: Config) -> list[Path]:
+    root = wiki_root_dir(config)
+    if not root.exists():
+        return []
+    active_paths = [
+        path
+        for path in root.glob("*/*.md")
+        if path.parent.name != ARCHIVE_DIRNAME and ARCHIVE_DIRNAME not in path.relative_to(root).parts
+    ]
+    archive_paths = list(wiki_archive_dir(config).glob("*/*.md")) if wiki_archive_dir(config).exists() else []
+    return sorted([*active_paths, *archive_paths])
 
 
 def load_index(config: Config) -> dict[str, Any] | None:
@@ -378,14 +441,12 @@ def write_index(config: Config, documents: list[dict[str, Any]]) -> dict[str, An
 
 
 def rebuild_index(config: Config) -> dict[str, Any]:
-    root = wiki_root_dir(config)
     documents: list[dict[str, Any]] = []
-    if root.exists():
-        for path in sorted(root.glob("*/*.md")):
-            doc = load_document(path, config.vault_path)
-            if not doc.project:
-                doc.project = path.parent.name
-            documents.append(index_entry_for_document(doc))
+    for path in iter_wiki_markdown_paths(config):
+        doc = load_document(path, config.vault_path)
+        if not doc.project:
+            doc.project = path.parent.name
+        documents.append(index_entry_for_document(doc))
     return write_index(config, documents)
 
 
@@ -456,6 +517,10 @@ def present_index_entry(entry: dict[str, Any], score: int | None = None, reason:
         "tags": entry.get("tags") or [],
         "updated": entry.get("updated"),
     }
+    if entry.get("archived"):
+        payload["archived"] = True
+        payload["original_path"] = entry.get("original_path")
+        payload["archived_at"] = entry.get("archived_at")
     if score is not None:
         payload["score"] = score
     if reason:
@@ -478,12 +543,15 @@ def scan_documents(
     query: str | None,
     limit: int = MAX_SCAN_RESULTS,
     include_snippet: bool = False,
+    include_archived: bool = False,
 ) -> list[dict[str, Any]]:
     existing_index = load_index(config)
     if existing_index is not None:
         matches: list[tuple[int, str, dict[str, Any]]] = []
         for entry in existing_index["documents"]:
             if entry.get("project") != project_name:
+                continue
+            if entry.get("archived") and not include_archived:
                 continue
             score, reason = score_index_entry(entry, query)
             if score <= 0:
@@ -494,25 +562,23 @@ def scan_documents(
         return [present_index_entry(entry, score, reason, include_snippet) for score, reason, entry in matches[:limit]]
 
     project_dir = wiki_project_dir(config, project_name)
-    if not project_dir.exists():
+    archive_project_dir = wiki_archive_project_dir(config, project_name)
+    if not project_dir.exists() and not (include_archived and archive_project_dir.exists()):
         return []
 
     query_terms = tokenize(query or "")
     documents: list[dict[str, Any]] = []
+    scan_paths = sorted(project_dir.glob("*.md")) if project_dir.exists() else []
+    if include_archived:
+        if archive_project_dir.exists():
+            scan_paths.extend(sorted(archive_project_dir.glob("*.md")))
 
-    for path in sorted(project_dir.glob("*.md")):
+    for path in scan_paths:
         doc = load_document(path, config.vault_path)
         haystack = " ".join([doc.title, *doc.tags, path.name]).lower()
         if query_terms and not all(term in haystack for term in query_terms):
             continue
-        documents.append(
-            {
-                "path": doc.relative_path,
-                "title": doc.title,
-                "tags": doc.tags,
-                "updated": doc.updated,
-            }
-        )
+        documents.append(present_index_entry(index_entry_for_document(doc)))
 
     return documents[:limit]
 
@@ -658,11 +724,247 @@ def read_document(config: Config, path_arg: str) -> str:
     return path.read_text()
 
 
+def filesystem_timestamp(path: Path) -> str:
+    return datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat()
+
+
+def add_frontmatter_to_document(
+    config: Config,
+    project_name: str,
+    path_arg: str,
+    title: str | None,
+    extra_tags: list[str] | None,
+) -> dict[str, Any]:
+    path = resolve_doc_path(config, path_arg)
+    if not path.exists():
+        raise WikiError(f"Document does not exist: {path_arg}")
+
+    text = path.read_text()
+    existing_frontmatter, body = parse_frontmatter(text)
+    if existing_frontmatter:
+        raise WikiError(f"Document already has frontmatter: {path.relative_to(config.vault_path)}")
+
+    timestamp = filesystem_timestamp(path)
+    frontmatter = {
+        "title": (title or path.stem.replace("-", " ").title()).strip(),
+        "created": timestamp,
+        "updated": timestamp,
+        "project": project_name,
+        "tags": normalize_tags(config, project_name, extra_tags),
+    }
+
+    atomic_write(path, render_existing_document(frontmatter, body))
+    refresh_index_entry(config, path)
+    return {
+        "path": str(path.relative_to(config.vault_path)),
+        "title": frontmatter["title"],
+        "created": frontmatter["created"],
+        "updated": frontmatter["updated"],
+        "tags": frontmatter["tags"],
+    }
+
+
+def parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.astimezone()
+    return parsed
+
+
+def age_days(value: str | None) -> int | None:
+    parsed = parse_iso_datetime(value)
+    if not parsed:
+        return None
+    return max(0, (datetime.now().astimezone() - parsed).days)
+
+
+def archive_destination_for(config: Config, doc: Document) -> Path:
+    project_name = doc.project or doc.path.parent.name
+    return ensure_within(config.vault_path, wiki_archive_project_dir(config, project_name) / doc.path.name)
+
+
+def archive_candidates(
+    config: Config,
+    project_name: str,
+    older_than_days: int,
+    limit: int,
+    force: bool = False,
+) -> list[dict[str, Any]]:
+    cutoff = datetime.now().astimezone() - timedelta(days=older_than_days)
+    candidates: list[dict[str, Any]] = []
+    project_dir = wiki_project_dir(config, project_name)
+    if not project_dir.exists():
+        return []
+
+    for path in sorted(project_dir.glob("*.md")):
+        doc = load_document(path, config.vault_path)
+        if not doc.frontmatter:
+            candidates.append(
+                {
+                    "path": doc.relative_path,
+                    "title": doc.title,
+                    "reason": "needs_review",
+                    "detail": "missing frontmatter",
+                }
+            )
+            continue
+        if frontmatter_bool(doc.frontmatter.get("archived")):
+            continue
+        has_durable_tag = bool(ARCHIVE_DURABLE_TAGS.intersection(set(doc.tags)))
+        if has_durable_tag and not force:
+            continue
+        updated = parse_iso_datetime(doc.updated or doc.created)
+        if not updated or updated > cutoff:
+            continue
+        recommendation = "old_note"
+        if ARCHIVE_BOOST_TAGS.intersection(set(doc.tags)) or extract_ticket_ids(f"{doc.title} {doc.path.name}"):
+            recommendation = "old_ticket_or_investigation"
+        if has_durable_tag:
+            recommendation = "old_durable_note"
+        candidates.append(
+            {
+                "path": doc.relative_path,
+                "title": doc.title,
+                "tags": doc.tags,
+                "updated": doc.updated,
+                "age_days": age_days(doc.updated or doc.created),
+                "reason": recommendation,
+            }
+        )
+
+    candidates.sort(key=lambda item: (item.get("updated") or "", item.get("title") or ""))
+    return candidates[:limit]
+
+
+def archive_candidates_global(
+    config: Config,
+    older_than_days: int,
+    limit: int,
+    force: bool = False,
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for project_name in wiki_project_names(config):
+        for candidate in archive_candidates(config, project_name, older_than_days, limit, force):
+            candidates.append({"project": project_name, **candidate})
+
+    candidates.sort(key=lambda item: (item.get("updated") or "", item.get("project") or "", item.get("title") or ""))
+    return candidates[:limit]
+
+
+def render_existing_document(frontmatter: dict[str, Any], body: str) -> str:
+    return f"{format_frontmatter(frontmatter)}\n\n{body.strip()}\n"
+
+
+def remove_empty_directory(directory: Path, protected_directories: set[Path]) -> bool:
+    resolved_directory = directory.resolve()
+    resolved_protected = {path.resolve() for path in protected_directories}
+    if resolved_directory in resolved_protected:
+        return False
+    try:
+        resolved_directory.rmdir()
+    except OSError:
+        return False
+    return True
+
+
+def archive_document(config: Config, path_arg: str, reason: str | None) -> dict[str, Any]:
+    source_path = resolve_doc_path(config, path_arg)
+    if not source_path.exists():
+        raise WikiError(f"Document does not exist: {path_arg}")
+
+    doc = load_document(source_path, config.vault_path)
+    if not doc.frontmatter:
+        raise WikiError(f"Document is missing expected frontmatter: {source_path}")
+    if frontmatter_bool(doc.frontmatter.get("archived")):
+        raise WikiError(f"Document is already archived: {doc.relative_path}")
+
+    destination_path = archive_destination_for(config, doc)
+    if destination_path.exists():
+        raise WikiError(f"Archive destination already exists: {destination_path.relative_to(config.vault_path)}")
+
+    timestamp = now_iso()
+    frontmatter = dict(doc.frontmatter)
+    frontmatter["updated"] = timestamp
+    frontmatter["archived"] = True
+    frontmatter["archived_at"] = timestamp
+    frontmatter["archived_reason"] = reason or "archived"
+    frontmatter["original_path"] = doc.relative_path
+
+    atomic_write(destination_path, render_existing_document(frontmatter, doc.body))
+    source_path.unlink()
+    active_directory_removed = remove_empty_directory(source_path.parent, {wiki_root_dir(config), wiki_archive_dir(config)})
+    refresh_index_entry(config, source_path)
+    refresh_index_entry(config, destination_path)
+    return {
+        "path": str(destination_path.relative_to(config.vault_path)),
+        "original_path": doc.relative_path,
+        "title": doc.title,
+        "archived_at": timestamp,
+        "reason": frontmatter["archived_reason"],
+        "active_directory_removed": active_directory_removed,
+    }
+
+
+def restore_document(config: Config, path_arg: str) -> dict[str, Any]:
+    archive_path = resolve_doc_path(config, path_arg)
+    if not archive_path.exists():
+        raise WikiError(f"Document does not exist: {path_arg}")
+
+    doc = load_document(archive_path, config.vault_path)
+    if not doc.frontmatter:
+        raise WikiError(f"Document is missing expected frontmatter: {archive_path}")
+    if not frontmatter_bool(doc.frontmatter.get("archived")):
+        raise WikiError(f"Document is not archived: {doc.relative_path}")
+
+    original_path = str(doc.frontmatter.get("original_path") or "")
+    if not original_path:
+        raise WikiError(f"Archived document is missing original_path: {doc.relative_path}")
+    destination_path = resolve_doc_path(config, original_path)
+    if destination_path.exists():
+        raise WikiError(f"Restore destination already exists: {original_path}")
+
+    frontmatter = dict(doc.frontmatter)
+    timestamp = now_iso()
+    frontmatter["updated"] = timestamp
+    for key in ["archived", "archived_at", "archived_reason", "original_path"]:
+        frontmatter.pop(key, None)
+
+    atomic_write(destination_path, render_existing_document(frontmatter, doc.body))
+    archive_path.unlink()
+    archive_directory_removed = remove_empty_directory(archive_path.parent, {wiki_archive_dir(config), wiki_root_dir(config)})
+    refresh_index_entry(config, archive_path)
+    refresh_index_entry(config, destination_path)
+    return {
+        "path": str(destination_path.relative_to(config.vault_path)),
+        "archived_path": doc.relative_path,
+        "title": doc.title,
+        "restored_at": timestamp,
+        "archive_directory_removed": archive_directory_removed,
+    }
+
+
+def archive_status(config: Config, project_name: str) -> dict[str, Any]:
+    active_dir = wiki_project_dir(config, project_name)
+    archive_dir = wiki_archive_project_dir(config, project_name)
+    active_count = len(list(active_dir.glob("*.md"))) if active_dir.exists() else 0
+    archived_count = len(list(archive_dir.glob("*.md"))) if archive_dir.exists() else 0
+    return {
+        "project": project_name,
+        "active_documents": active_count,
+        "archived_documents": archived_count,
+        "archive_path": str(archive_dir.relative_to(config.vault_path)),
+    }
+
+
 def index_status(config: Config) -> dict[str, Any]:
     path = index_path(config)
     data = load_index(config)
-    root = wiki_root_dir(config)
-    markdown_paths = sorted(root.glob("*/*.md")) if root.exists() else []
+    markdown_paths = iter_wiki_markdown_paths(config)
     markdown_count = len(markdown_paths)
     indexed_count = len(data["documents"]) if data else 0
     indexed_mtimes = {doc.get("path"): doc.get("mtime_ns") for doc in data["documents"]} if data else {}
@@ -720,6 +1022,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--query", help="Optional keywords to filter by indexed title, tags, filename, headings, and excerpt.")
     scan_parser.add_argument("--limit", type=int, default=MAX_SCAN_RESULTS, help=f"Maximum results to return. Default: {MAX_SCAN_RESULTS}.")
     scan_parser.add_argument("--include-snippet", action="store_true", help="Include short indexed snippets in scan results.")
+    scan_parser.add_argument("--include-archived", action="store_true", help="Include archived documents in scan results.")
 
     read_parser = subparsers.add_parser("read", help="Read a wiki document.")
     read_parser.add_argument("--path", required=True, help="Wiki document path relative to the vault root.")
@@ -737,10 +1040,29 @@ def build_parser() -> argparse.ArgumentParser:
     update_parser.add_argument("--content", help="Inline markdown content.")
     update_parser.add_argument("--content-file", help="Path to a markdown file containing the new content.")
 
+    frontmatter_parser = subparsers.add_parser("add-frontmatter", help="Add generated frontmatter to an existing plain Markdown note.")
+    frontmatter_parser.add_argument("--path", required=True, help="Wiki document path relative to the vault root.")
+    frontmatter_parser.add_argument("--title", help="Title to store in frontmatter. Defaults to the filename title.")
+    frontmatter_parser.add_argument("--tag", action="append", dest="tags", help="Additional tag to add.")
+
     index_parser = subparsers.add_parser("index", help="Manage the lightweight wiki search index.")
     index_subparsers = index_parser.add_subparsers(dest="index_command", required=True)
     index_subparsers.add_parser("rebuild", help="Rebuild the wiki search index from Markdown documents.")
     index_subparsers.add_parser("status", help="Report whether the wiki search index exists and is fresh.")
+
+    archive_parser = subparsers.add_parser("archive", help="Archive, restore, and inspect old wiki notes.")
+    archive_subparsers = archive_parser.add_subparsers(dest="archive_command", required=True)
+    archive_candidates_parser = archive_subparsers.add_parser("candidates", help="List explicit archive candidates without changing files.")
+    archive_candidates_parser.add_argument("--older-than-days", type=int, default=90, help="Minimum note age by updated timestamp. Default: 90.")
+    archive_candidates_parser.add_argument("--limit", type=int, default=MAX_SCAN_RESULTS, help=f"Maximum candidates to return. Default: {MAX_SCAN_RESULTS}.")
+    archive_candidates_parser.add_argument("--force", action="store_true", help="Include durable notes such as project overviews, architecture notes, runbooks, and glossary entries.")
+    archive_candidates_parser.add_argument("--global", dest="global_scope", action="store_true", help="List candidates across all active project wiki folders.")
+    archive_apply_parser = archive_subparsers.add_parser("apply", help="Archive one explicitly selected wiki note.")
+    archive_apply_parser.add_argument("--path", required=True, help="Active wiki document path relative to the vault root.")
+    archive_apply_parser.add_argument("--reason", help="Reason stored in archive frontmatter.")
+    archive_restore_parser = archive_subparsers.add_parser("restore", help="Restore one archived wiki note to its original path.")
+    archive_restore_parser.add_argument("--path", required=True, help="Archived wiki document path relative to the vault root.")
+    archive_subparsers.add_parser("status", help="Show active and archived note counts for the project.")
 
     subparsers.add_parser("doctor", help="Show resolved project, configuration, vault, and index diagnostics.")
 
@@ -759,7 +1081,14 @@ def main() -> int:
         if args.command == "scan":
             payload = {
                 "project": project_name,
-                "documents": scan_documents(config, project_name, args.query, args.limit, args.include_snippet),
+                "documents": scan_documents(
+                    config,
+                    project_name,
+                    args.query,
+                    args.limit,
+                    args.include_snippet,
+                    args.include_archived,
+                ),
             }
             print(json.dumps(payload, indent=2))
             return 0
@@ -780,6 +1109,11 @@ def main() -> int:
             print(json.dumps(payload, indent=2))
             return 0
 
+        if args.command == "add-frontmatter":
+            payload = add_frontmatter_to_document(config, project_name, args.path, args.title, args.tags)
+            print(json.dumps(payload, indent=2))
+            return 0
+
         if args.command == "index":
             if args.index_command == "rebuild":
                 payload = rebuild_index(config)
@@ -796,6 +1130,30 @@ def main() -> int:
                 return 0
             if args.index_command == "status":
                 print(json.dumps(index_status(config), indent=2))
+                return 0
+
+        if args.command == "archive":
+            if args.archive_command == "candidates":
+                candidates = (
+                    archive_candidates_global(config, args.older_than_days, args.limit, args.force)
+                    if args.global_scope
+                    else archive_candidates(config, project_name, args.older_than_days, args.limit, args.force)
+                )
+                payload = {
+                    "scope": "global" if args.global_scope else "project",
+                    "project": None if args.global_scope else project_name,
+                    "candidates": candidates,
+                }
+                print(json.dumps(payload, indent=2))
+                return 0
+            if args.archive_command == "apply":
+                print(json.dumps(archive_document(config, args.path, args.reason), indent=2))
+                return 0
+            if args.archive_command == "restore":
+                print(json.dumps(restore_document(config, args.path), indent=2))
+                return 0
+            if args.archive_command == "status":
+                print(json.dumps(archive_status(config, project_name), indent=2))
                 return 0
 
         if args.command == "doctor":

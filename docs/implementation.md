@@ -16,6 +16,10 @@ The script supports:
 - `update`: append content, replace a named heading section, or rewrite the full article body.
 - `index rebuild`: build a lightweight search index for all project wiki Markdown documents.
 - `index status`: report whether the index exists and has the expected document count.
+- `archive candidates`: list old active notes that may be safe to archive.
+- `archive apply`: move one explicit active note into the archive.
+- `archive restore`: move one archived note back to its original path.
+- `archive status`: report active and archived note counts for the current project.
 - `doctor`: print resolved project, configuration, vault, wiki, and index diagnostics.
 
 All writes go through `scripts/obsidian_wiki.py`; agents should not edit wiki documents directly.
@@ -33,6 +37,20 @@ The optional search index is stored at:
 Each entry stores compact metadata: vault-relative path, project, title, tags, updated timestamp, headings, a short excerpt, normalized lexical tokens, and ticket IDs such as `BACKEND-2242`. `scan --query` uses the index when present and falls back to direct project-folder Markdown scanning when absent.
 
 Successful `create` and `update` operations refresh only the affected index entry when an index already exists. They do not create the index implicitly; use `index rebuild` to opt into indexed search.
+
+## Archive
+
+Archived notes are stored under:
+
+```text
+{vault_path}/{wiki_dir}/_archive/{project-name}/
+```
+
+`archive apply` moves the file, preserves its body, and adds frontmatter fields: `archived`, `archived_at`, `archived_reason`, and `original_path`. `archive restore` uses `original_path` and fails if the destination already exists.
+
+Normal `scan` excludes archived notes. `scan --include-archived` returns archived entries with archive metadata. The index includes active and archived notes so archive and restore keep search state fresh without requiring a full rebuild.
+
+`archive candidates` is intentionally read-only. It scans the detected project by default; passing `--global` scans every active project folder under the wiki root and includes the project name in each candidate. It uses the note `updated` timestamp and excludes durable tags such as `project-overview`, `architecture`, `runbook`, and `glossary` by default. Passing `--force` includes those durable notes and marks them as `old_durable_note`, so explicit force requests can still surface every age-matching note before `archive apply` moves selected paths.
 
 ## Agent Package
 

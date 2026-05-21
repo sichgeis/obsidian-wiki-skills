@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 import tempfile
 import unittest
@@ -170,6 +171,168 @@ class IndexSearchTest(WikiTestCase):
         self.assertEqual(status["stale_paths"], ["Wiki/demo/existing-ticket.md"])
 
 
+class ArchiveDocumentTest(WikiTestCase):
+    def create_article(self, title: str, body: str, tags: list[str] | None = None) -> Path:
+        result = obsidian_wiki.create_document(self.config, "demo", title, body, tags)
+        return self.vault_path / result["path"]
+
+    def write_article_with_updated(self, title: str, updated: str, tags: list[str]) -> Path:
+        path = self.vault_path / "Wiki" / "demo" / f"{obsidian_wiki.slugify(title)}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tag_lines = "\n".join(f"  - {tag}" for tag in tags)
+        path.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f"title: {title}",
+                    "created: 2025-01-01T00:00:00+00:00",
+                    f"updated: {updated}",
+                    "project: demo",
+                    "tags:",
+                    tag_lines,
+                    "---",
+                    "",
+                    f"# {title}",
+                    "",
+                    "Body",
+                    "",
+                ]
+            )
+        )
+        return path
+
+    def test_archive_candidates_excludes_durable_tags_by_default(self) -> None:
+        self.write_article_with_updated("Old Ticket", "2025-01-01T00:00:00+00:00", ["wiki", "project/demo", "ticket"])
+        self.write_article_with_updated("Architecture Overview", "2025-01-01T00:00:00+00:00", ["wiki", "project/demo", "architecture"])
+        self.create_article("Fresh Ticket", "Body", ["ticket"])
+
+        candidates = obsidian_wiki.archive_candidates(self.config, "demo", 90, 10)
+
+        self.assertEqual([candidate["title"] for candidate in candidates], ["Old Ticket"])
+        self.assertEqual(candidates[0]["reason"], "old_ticket_or_investigation")
+
+    def test_archive_candidates_force_includes_durable_tags(self) -> None:
+        self.write_article_with_updated("Old Ticket", "2025-01-01T00:00:00+00:00", ["wiki", "project/demo", "ticket"])
+        self.write_article_with_updated("Architecture Overview", "2025-01-01T00:00:00+00:00", ["wiki", "project/demo", "architecture"])
+
+        candidates = obsidian_wiki.archive_candidates(self.config, "demo", 90, 10, force=True)
+        reasons_by_title = {candidate["title"]: candidate["reason"] for candidate in candidates}
+
+        self.assertEqual(
+            reasons_by_title,
+            {
+                "Old Ticket": "old_ticket_or_investigation",
+                "Architecture Overview": "old_durable_note",
+            },
+        )
+
+    def test_archive_candidates_global_lists_old_notes_across_projects(self) -> None:
+        self.write_article_with_updated("Demo Old Ticket", "2025-01-01T00:00:00+00:00", ["wiki", "project/demo", "ticket"])
+        other_project_path = self.vault_path / "Wiki" / "other" / "other-old-note.md"
+        other_project_path.parent.mkdir(parents=True, exist_ok=True)
+        other_project_path.write_text(
+            "\n".join(
+                [
+                    "---",
+                    "title: Other Old Note",
+                    "created: 2025-01-01T00:00:00+00:00",
+                    "updated: 2025-01-02T00:00:00+00:00",
+                    "project: other",
+                    "tags:",
+                    "  - wiki",
+                    "  - project/other",
+                    "---",
+                    "",
+                    "# Other Old Note",
+                    "",
+                    "Body",
+                    "",
+                ]
+            )
+        )
+
+        candidates = obsidian_wiki.archive_candidates_global(self.config, 90, 10)
+
+        self.assertEqual(
+            {candidate["title"]: candidate["project"] for candidate in candidates},
+            {
+                "Demo Old Ticket": "demo",
+                "Other Old Note": "other",
+            },
+        )
+
+    def test_archive_apply_moves_note_and_marks_frontmatter(self) -> None:
+        path = self.create_article("Old Ticket", "Body", ["ticket"])
+        obsidian_wiki.rebuild_index(self.config)
+
+        result = obsidian_wiki.archive_document(
+            self.config,
+            str(path.relative_to(self.vault_path)),
+            "superseded",
+        )
+
+        archive_path = self.vault_path / "Wiki" / "_archive" / "demo" / "old-ticket.md"
+        self.assertFalse(path.exists())
+        self.assertTrue(archive_path.exists())
+        self.assertEqual(result["path"], "Wiki/_archive/demo/old-ticket.md")
+        frontmatter, body = obsidian_wiki.parse_frontmatter(archive_path.read_text())
+        self.assertEqual(frontmatter["archived"], "true")
+        self.assertEqual(frontmatter["archived_reason"], "superseded")
+        self.assertEqual(frontmatter["original_path"], "Wiki/demo/old-ticket.md")
+        self.assertIn("Body", body)
+
+    def test_scan_excludes_archived_notes_by_default(self) -> None:
+        path = self.create_article("Old Ticket", "Searchable archived body", ["ticket"])
+        obsidian_wiki.rebuild_index(self.config)
+        obsidian_wiki.archive_document(self.config, str(path.relative_to(self.vault_path)), "old")
+
+        active_results = obsidian_wiki.scan_documents(self.config, "demo", "searchable", include_archived=False)
+        archived_results = obsidian_wiki.scan_documents(self.config, "demo", "searchable", include_archived=True)
+
+        self.assertEqual(active_results, [])
+        self.assertEqual(len(archived_results), 1)
+        self.assertTrue(archived_results[0]["archived"])
+        self.assertEqual(archived_results[0]["path"], "Wiki/_archive/demo/old-ticket.md")
+
+    def test_restore_moves_archived_note_to_original_path(self) -> None:
+        path = self.create_article("Old Ticket", "Body", ["ticket"])
+        obsidian_wiki.rebuild_index(self.config)
+        archive_result = obsidian_wiki.archive_document(self.config, str(path.relative_to(self.vault_path)), "old")
+
+        restore_result = obsidian_wiki.restore_document(self.config, archive_result["path"])
+
+        restored_path = self.vault_path / "Wiki" / "demo" / "old-ticket.md"
+        archive_path = self.vault_path / "Wiki" / "_archive" / "demo" / "old-ticket.md"
+        self.assertTrue(restored_path.exists())
+        self.assertFalse(archive_path.exists())
+        self.assertEqual(restore_result["path"], "Wiki/demo/old-ticket.md")
+        frontmatter, _ = obsidian_wiki.parse_frontmatter(restored_path.read_text())
+        self.assertNotIn("archived", frontmatter)
+        self.assertNotIn("original_path", frontmatter)
+
+    def test_restore_fails_when_destination_exists(self) -> None:
+        path = self.create_article("Old Ticket", "Body", ["ticket"])
+        archive_result = obsidian_wiki.archive_document(self.config, str(path.relative_to(self.vault_path)), "old")
+        self.create_article("Old Ticket", "Replacement", ["ticket"])
+
+        with self.assertRaisesRegex(obsidian_wiki.WikiError, "Restore destination already exists"):
+            obsidian_wiki.restore_document(self.config, archive_result["path"])
+
+    def test_index_status_remains_fresh_after_archive_and_restore(self) -> None:
+        path = self.create_article("Old Ticket", "Body", ["ticket"])
+        obsidian_wiki.rebuild_index(self.config)
+        archive_result = obsidian_wiki.archive_document(self.config, str(path.relative_to(self.vault_path)), "old")
+
+        archived_status = obsidian_wiki.index_status(self.config)
+        self.assertFalse(archived_status["stale"])
+        self.assertEqual(archived_status["documents"], 1)
+
+        obsidian_wiki.restore_document(self.config, archive_result["path"])
+        restored_status = obsidian_wiki.index_status(self.config)
+        self.assertFalse(restored_status["stale"])
+        self.assertEqual(restored_status["documents"], 1)
+
+
 class UpdateDocumentTest(WikiTestCase):
     def write_article(self, body: str, frontmatter: str | None = None) -> None:
         metadata = frontmatter or "\n".join(
@@ -332,6 +495,47 @@ class UpdateDocumentTest(WikiTestCase):
                 "Wiki/demo/article.md",
                 "rewrite",
                 "New",
+                None,
+            )
+
+
+class AddFrontmatterTest(WikiTestCase):
+    def test_add_frontmatter_preserves_body_and_uses_file_mtime(self) -> None:
+        self.path.write_text("# Existing Title\n\nBody\n")
+        os.utime(self.path, (1_700_000_000, 1_700_000_000))
+        original_timestamp = obsidian_wiki.filesystem_timestamp(self.path)
+
+        result = obsidian_wiki.add_frontmatter_to_document(
+            self.config,
+            "demo",
+            "Wiki/demo/article.md",
+            "Article",
+            ["repair"],
+        )
+
+        frontmatter, body = obsidian_wiki.parse_frontmatter(self.path.read_text())
+        self.assertEqual(result["path"], "Wiki/demo/article.md")
+        self.assertEqual(frontmatter["title"], "Article")
+        self.assertEqual(frontmatter["project"], "demo")
+        self.assertEqual(frontmatter["tags"], ["wiki", "project/demo", "repair"])
+        self.assertEqual(frontmatter["created"], frontmatter["updated"])
+        self.assertEqual(frontmatter["updated"], original_timestamp)
+        self.assertEqual(body.strip(), "# Existing Title\n\nBody")
+
+    def test_add_frontmatter_rejects_document_with_existing_frontmatter(self) -> None:
+        self.path.write_text(
+            "---\n"
+            "title: Article\n"
+            "---\n\n"
+            "# Article\n"
+        )
+
+        with self.assertRaisesRegex(obsidian_wiki.WikiError, "already has frontmatter"):
+            obsidian_wiki.add_frontmatter_to_document(
+                self.config,
+                "demo",
+                "Wiki/demo/article.md",
+                None,
                 None,
             )
 

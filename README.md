@@ -6,13 +6,13 @@ The skill persists codebase knowledge into an Obsidian vault as per-repository w
 
 Existing wiki documents can be updated by appending content, replacing a named heading section, or rewriting the full article body with `update --mode rewrite`.
 Created documents keep one generated top-level title heading; duplicate matching H1 headings in supplied content are removed automatically.
-Search is backed by a lightweight JSON index at `{vault_path}/{wiki_dir}/.obsidian-wiki-index.json` when present, so agents can find likely matching notes from titles, tags, filenames, headings, ticket IDs, and short excerpts without reading every note body.
+Search is backed by a lightweight JSON index at `{vault_path}/{wiki_dir}/.obsidian-wiki-index.json` when present, so agents can find likely matching notes from titles, tags, filenames, headings, ticket IDs, and short excerpts without reading every note body. Old notes can be archived reversibly under `{vault_path}/{wiki_dir}/_archive/{project}/`.
 
 ## Layout
 
 - `SKILL.md`: agent-agnostic skill manifest and operating instructions.
 - `commands/`: slash-command wrappers that invoke the skill from supported agents.
-- `scripts/obsidian_wiki.py`: deterministic scan/read/create/update/index/doctor tool for wiki documents.
+- `scripts/obsidian_wiki.py`: deterministic scan/read/create/update/index/archive/doctor tool for wiki documents.
 - `config.json`: local default configuration used by the installed skill.
 - `config.example.json`: portable configuration template.
 - `docs/`: project documentation for maintainers.
@@ -119,6 +119,39 @@ python dist/obsidian-wiki/scripts/obsidian_wiki.py doctor
 ```
 
 `scan --query` uses the index when it exists and falls back to direct Markdown scanning when it does not. Successful `create` and `update` operations refresh their affected index entry automatically if an index already exists.
+
+## Archive
+
+List old-note candidates without changing files:
+
+```bash
+python dist/obsidian-wiki/scripts/obsidian_wiki.py archive candidates --older-than-days 90
+```
+
+Scan all active project wiki folders instead of only the detected project:
+
+```bash
+python dist/obsidian-wiki/scripts/obsidian_wiki.py archive candidates --older-than-days 90 --global
+```
+
+Durable notes such as project overviews, architecture notes, runbooks, and glossary entries are excluded from normal candidates. Include them only for explicit force requests:
+
+```bash
+python dist/obsidian-wiki/scripts/obsidian_wiki.py archive candidates --older-than-days 90 --force
+```
+
+Archive and restore explicit paths:
+
+```bash
+python dist/obsidian-wiki/scripts/obsidian_wiki.py archive apply \
+  --path "Wiki/my-project/old-ticket.md" \
+  --reason "superseded by current runbook"
+
+python dist/obsidian-wiki/scripts/obsidian_wiki.py archive restore \
+  --path "Wiki/_archive/my-project/old-ticket.md"
+```
+
+Archived notes move to `Wiki/_archive/{project}/`, keep their content, and get archive metadata in frontmatter. Normal `scan` excludes archived notes; use `scan --include-archived` to find them explicitly.
 
 ## Verify
 
