@@ -667,8 +667,8 @@ class NormalizeFrontmatterTest(FundusTestCase):
 
     def test_normalize_frontmatter_apply_preserves_body_and_uses_path_project(self) -> None:
         path = self.write_legacy_note(
-            "Fundus/document-extraction-services/article.md",
-            "Document Extraction Router",
+            "Fundus/extraction-services/article.md",
+            "Extraction Router",
             "old-project",
         )
         _, original_body = fundus.parse_frontmatter(path.read_text())
@@ -678,7 +678,7 @@ class NormalizeFrontmatterTest(FundusTestCase):
             self.config,
             "Hypatos",
             fundus.project_scope("Hypatos"),
-            "Fundus/document-extraction-services/article.md",
+            "Fundus/extraction-services/article.md",
             apply=True,
         )
 
@@ -687,15 +687,15 @@ class NormalizeFrontmatterTest(FundusTestCase):
         self.assertEqual(result["applied_count"], 1)
         self.assertEqual(body, original_body)
         self.assertEqual(frontmatter["type"], "Architecture")
-        self.assertEqual(frontmatter["description"], "Document Extraction Router")
-        self.assertEqual(frontmatter["id"], "project/document-extraction-services/document-extraction-router")
+        self.assertEqual(frontmatter["description"], "Extraction Router")
+        self.assertEqual(frontmatter["id"], "project/extraction-services/extraction-router")
         self.assertEqual(frontmatter["scope"], "project")
-        self.assertEqual(frontmatter["scope_path"], "document-extraction-services")
-        self.assertEqual(frontmatter["project"], "document-extraction-services")
+        self.assertEqual(frontmatter["scope_path"], "extraction-services")
+        self.assertEqual(frontmatter["project"], "extraction-services")
         self.assertEqual(frontmatter["created"], "2026-01-01T00:00:00+00:00")
         self.assertEqual(frontmatter["updated"], "2026-01-02T00:00:00+00:00")
         self.assertEqual(frontmatter["timestamp"], "2026-01-02T00:00:00+00:00")
-        self.assertEqual(frontmatter["tags"], ["fundus", "project/document-extraction-services", "architecture"])
+        self.assertEqual(frontmatter["tags"], ["fundus", "project/extraction-services", "architecture"])
         self.assertFalse(status["stale"])
 
     def test_normalize_frontmatter_infers_area_and_removes_stale_project(self) -> None:

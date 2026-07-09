@@ -19,7 +19,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 SKILL_DIR = SCRIPT_PATH.parent.parent
 SKILL_CONFIG_PATH = SKILL_DIR / "config.json"
 PROJECT_CONFIG_RELATIVE_PATHS = [
-    Path(".agents") / "fundus.json",
+    Path(".codex") / "fundus.json",
 ]
 DEFAULT_CONFIG = {
     "fundus_dir": "Fundus",
@@ -145,7 +145,7 @@ def resolve_config(project_root: Path) -> Config:
     if not vault_path:
         raise FundusError(
             "Missing vault_path. Set OBSIDIAN_VAULT_PATH, add it to "
-            ".agents/fundus.json, or add it to the skill config."
+            ".codex/fundus.json, or add it to the skill config."
         )
 
     fundus_dir = merged.get("fundus_dir") or DEFAULT_CONFIG["fundus_dir"]

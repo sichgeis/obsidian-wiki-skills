@@ -1,0 +1,8 @@
+interface:
+  display_name: "Fundus"
+  short_description: "Persist durable codebase, epic, and domain knowledge into Fundus."
+  brand_color: "#2563EB"
+  default_prompt: "Use Fundus to document durable project, epic, domain, or cross-repository work knowledge."
+
+policy:
+  allow_implicit_invocation: true

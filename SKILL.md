@@ -34,7 +34,7 @@ Use this skill when a user wants persistent repository, epic, domain, or other d
 Configuration resolves in this order:
 
 1. `OBSIDIAN_VAULT_PATH` environment variable for `vault_path`
-2. `.agents/fundus.json` in the active project
+2. `.codex/fundus.json` in the active project
 3. `config.json` in this skill directory
 
 Defaults installed with this skill:
@@ -75,7 +75,7 @@ Archived project notes move to `Fundus/_archive/{project}/`. Archived area notes
 When running under Codex, minimize approval prompts:
 
 - Run the installed script directly: `/Users/christian/.codex/skills/fundus/scripts/fundus.py`.
-- Pick the Python command the agent can actually run (`python` or `python3`) and keep it stable. Codex prefix rules include the interpreter token, so `python .../fundus.py` and `python3 .../fundus.py` are different command prefixes.
+- Pick the Python command Codex can actually run (`python` or `python3`) and keep it stable. Codex prefix rules include the interpreter token, so `python .../fundus.py` and `python3 .../fundus.py` are different command prefixes.
 - If the matching helper prefix is not already allowlisted, ask once for the narrow rule matching the actual command, for example `prefix_rule(pattern=["python", "/Users/christian/.codex/skills/fundus/scripts/fundus.py"], decision="allow", justification="Allow the vetted Fundus helper without repeated prompts")`.
 - Use `--content` only for short, simple, single-line content that does not need shell interpolation, command substitution, here-docs, or ANSI-C `$'...'` quoting.
 - Use `--content-file` for multiline, quote-heavy, or generated Markdown. Put the temporary file under a sandbox-writable location such as `/private/tmp`, then run a clean helper command like `python /Users/christian/.codex/skills/fundus/scripts/fundus.py update --path ... --mode ... --content-file /private/tmp/note.md`.
@@ -99,16 +99,6 @@ Avoid for already-allowlisted helpers:
 ```text
 sandbox_permissions=require_escalated + shell wrapper or inline multiline content + repeated prefix_rule request
 ```
-
-## Slash command workflow
-
-The optional `document` slash command is a convenience wrapper around this skill. When invoked, treat the command arguments as the Fundus topic to document for the current repository.
-
-- Use the argument text as the note topic, for example `all unit tests of the project`.
-- Inspect the project enough to document the topic accurately before writing.
-- For unit-test documentation, identify test directories, frameworks, major test groups, fixtures, helpers, and relevant test commands. Summarize behavior by area instead of listing every assertion unless the project is small.
-- Use the standard scan/read/create/update workflow above. Do not create a duplicate note when an existing page already covers the topic.
-- In the final response, include the vault-relative Fundus note path that was created or updated.
 
 ## Commands
 
@@ -285,4 +275,4 @@ python /path/to/fundus/scripts/fundus.py doctor
 - All resolved paths are constrained to the configured vault root.
 - Writes are atomic to avoid partial documents.
 
-After creating or updating this skill, restart the coding agent so it can load the updated skill manifest.
+After creating or updating this skill, restart Codex so it can load the updated skill manifest.

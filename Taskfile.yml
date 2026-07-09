@@ -2,7 +2,9 @@ version: "3"
 
 vars:
   SKILL_NAME: fundus
-  LEGACY_SKILL_NAME: obsidian-wiki
+  LEGACY_SKILL_PREFIX: obsidian
+  LEGACY_SKILL_SUFFIX: wiki
+  RETIRED_PROMPT_NAME: document.md
   PYTHON:
     sh: command -v python || command -v python3
   HOME_DIR:
@@ -11,64 +13,34 @@ vars:
   BUILD_DIR: "{{.BUILD_ROOT}}/{{.SKILL_NAME}}"
   CODEX_SKILLS_DIR: "{{.HOME_DIR}}/.codex/skills"
   CODEX_PROMPTS_DIR: "{{.HOME_DIR}}/.codex/prompts"
-  CLAUDE_SKILLS_DIR: "{{.HOME_DIR}}/.claude/skills"
-  CLAUDE_COMMANDS_DIR: "{{.HOME_DIR}}/.claude/commands"
-  FORGE_SKILLS_DIR: "{{.HOME_DIR}}/.forge/skills"
-  AGENTS_COMMANDS_DIR: "{{.HOME_DIR}}/.agents/commands"
 
 tasks:
   build:
-    desc: Build the agent-agnostic skill package
+    desc: Build the Codex skill package
     run: once
     cmds:
       - rm -rf "{{.BUILD_DIR}}"
-      - rm -rf "{{.BUILD_ROOT}}/{{.LEGACY_SKILL_NAME}}"
+      - rm -rf "{{.BUILD_ROOT}}/{{.LEGACY_SKILL_PREFIX}}-{{.LEGACY_SKILL_SUFFIX}}"
       - mkdir -p "{{.BUILD_DIR}}/scripts"
-      - mkdir -p "{{.BUILD_DIR}}/commands"
+      - mkdir -p "{{.BUILD_DIR}}/agents"
       - cp SKILL.md config.json requirements.txt "{{.BUILD_DIR}}/"
       - cp scripts/fundus.py scripts/fundus_mcp.py "{{.BUILD_DIR}}/scripts/"
-      - cp commands/document.md commands/forge-document.md "{{.BUILD_DIR}}/commands/"
+      - cp agents/openai.yaml "{{.BUILD_DIR}}/agents/openai.yaml"
 
   install:
-    desc: Install the skill for Codex, Claude Code, and ForgeCode
+    desc: Install the skill for Codex
     cmds:
-      - task: build
       - task: install:codex
-      - task: install:claude
-      - task: install:forge
 
   install:codex:
-    desc: Install the skill and document command for Codex
+    desc: Install the skill for Codex
     deps: [build]
     cmds:
       - mkdir -p "{{.CODEX_SKILLS_DIR}}"
-      - mkdir -p "{{.CODEX_PROMPTS_DIR}}"
       - rm -rf "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}"
-      - rm -rf "{{.CODEX_SKILLS_DIR}}/{{.LEGACY_SKILL_NAME}}"
+      - rm -rf "{{.CODEX_SKILLS_DIR}}/{{.LEGACY_SKILL_PREFIX}}-{{.LEGACY_SKILL_SUFFIX}}"
+      - rm -f "{{.CODEX_PROMPTS_DIR}}/{{.RETIRED_PROMPT_NAME}}"
       - cp -R "{{.BUILD_DIR}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}"
-      - cp commands/document.md "{{.CODEX_PROMPTS_DIR}}/document.md"
-
-  install:claude:
-    desc: Install the skill and document command for Claude Code
-    deps: [build]
-    cmds:
-      - mkdir -p "{{.CLAUDE_SKILLS_DIR}}"
-      - mkdir -p "{{.CLAUDE_COMMANDS_DIR}}"
-      - rm -rf "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}"
-      - rm -rf "{{.CLAUDE_SKILLS_DIR}}/{{.LEGACY_SKILL_NAME}}"
-      - cp -R "{{.BUILD_DIR}}" "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}"
-      - cp commands/document.md "{{.CLAUDE_COMMANDS_DIR}}/document.md"
-
-  install:forge:
-    desc: Install the skill and document command for ForgeCode
-    deps: [build]
-    cmds:
-      - mkdir -p "{{.FORGE_SKILLS_DIR}}"
-      - mkdir -p "{{.AGENTS_COMMANDS_DIR}}"
-      - rm -rf "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}"
-      - rm -rf "{{.FORGE_SKILLS_DIR}}/{{.LEGACY_SKILL_NAME}}"
-      - cp -R "{{.BUILD_DIR}}" "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}"
-      - cp commands/forge-document.md "{{.AGENTS_COMMANDS_DIR}}/document.md"
 
   verify:
     desc: Verify the built skill package and script entrypoint
@@ -77,13 +49,12 @@ tasks:
       - test -f "{{.BUILD_DIR}}/SKILL.md"
       - test -f "{{.BUILD_DIR}}/config.json"
       - test -f "{{.BUILD_DIR}}/requirements.txt"
+      - test -f "{{.BUILD_DIR}}/agents/openai.yaml"
       - test -f "{{.BUILD_DIR}}/scripts/fundus.py"
       - test -f "{{.BUILD_DIR}}/scripts/fundus_mcp.py"
-      - test -f "{{.BUILD_DIR}}/commands/document.md"
-      - test -f "{{.BUILD_DIR}}/commands/forge-document.md"
-      - '"{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/fundus.py" --help'
-      - '"{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/fundus_mcp.py" --help'
-      - '"{{.PYTHON}}" -m unittest discover -s tests'
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/fundus.py" --help
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/fundus_mcp.py" --help
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" -m unittest discover -s tests
 
   verify:codex:
     desc: Verify the Codex installation
@@ -91,32 +62,8 @@ tasks:
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/SKILL.md"
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/requirements.txt"
+      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/agents/openai.yaml"
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py"
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py"
-      - test -f "{{.CODEX_PROMPTS_DIR}}/document.md"
-      - '"{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py" --help'
-      - '"{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py" --help'
-
-  verify:claude:
-    desc: Verify the Claude Code installation
-    cmds:
-      - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/SKILL.md"
-      - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
-      - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/requirements.txt"
-      - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py"
-      - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py"
-      - test -f "{{.CLAUDE_COMMANDS_DIR}}/document.md"
-      - '"{{.PYTHON}}" "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py" --help'
-      - '"{{.PYTHON}}" "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py" --help'
-
-  verify:forge:
-    desc: Verify the ForgeCode installation
-    cmds:
-      - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/SKILL.md"
-      - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
-      - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/requirements.txt"
-      - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py"
-      - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py"
-      - test -f "{{.AGENTS_COMMANDS_DIR}}/document.md"
-      - '"{{.PYTHON}}" "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py" --help'
-      - '"{{.PYTHON}}" "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py" --help'
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py" --help
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py" --help

@@ -29,7 +29,7 @@ class McpFundusTestCase(unittest.TestCase):
         self.project_root = self.root / "demo-project"
         self.project_root.mkdir()
         self.vault_path = self.root / "vault"
-        config_dir = self.project_root / ".agents"
+        config_dir = self.project_root / ".codex"
         config_dir.mkdir()
         (config_dir / "fundus.json").write_text(
             json.dumps(
