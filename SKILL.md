@@ -10,6 +10,7 @@ Use this skill when a user wants persistent repository knowledge written into th
 ## Required behavior
 
 - Never write wiki notes directly. Use `scripts/obsidian_wiki.py` for scan, read, create, update, archive, and restore operations.
+- When an `obsidian-wiki` MCP server is available, prefer its typed tools over shell commands; the MCP server wraps the same deterministic helper behavior.
 - Resolve `scripts/obsidian_wiki.py` relative to this skill directory when the current working directory is not the installed skill directory.
 - Run the script from the project you want to document, or pass `--project` when you need to override the detected project name.
 - Keep wiki pages organized under `{vault_path}/{wiki_dir}/{project-name}/`.
@@ -69,9 +70,9 @@ When running under Codex, minimize approval prompts:
 
 - Run the installed script directly: `/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py`.
 - Pick the Python command the agent can actually run (`python` or `python3`) and keep it stable. Codex prefix rules include the interpreter token, so `python .../obsidian_wiki.py` and `python3 .../obsidian_wiki.py` are different command prefixes.
-- If the matching helper prefix is not already allowlisted, ask once for the narrow rule matching the actual command, for example `prefix_rule(pattern=["python3", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"], decision="allow", justification="Allow the vetted Obsidian wiki helper without repeated prompts")`.
+- If the matching helper prefix is not already allowlisted, ask once for the narrow rule matching the actual command, for example `prefix_rule(pattern=["python", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"], decision="allow", justification="Allow the vetted Obsidian wiki helper without repeated prompts")`.
 - Use `--content` only for short, simple, single-line content that does not need shell interpolation, command substitution, here-docs, or ANSI-C `$'...'` quoting.
-- Use `--content-file` for multiline, quote-heavy, or generated Markdown. Put the temporary file under a sandbox-writable location such as `/private/tmp`, then run a clean helper command like `python3 /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py update --path ... --mode ... --content-file /private/tmp/note.md`.
+- Use `--content-file` for multiline, quote-heavy, or generated Markdown. Put the temporary file under a sandbox-writable location such as `/private/tmp`, then run a clean helper command like `python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py update --path ... --mode ... --content-file /private/tmp/note.md`.
 - Treat read-only helper calls (`scan`, `read`, `doctor`, `index status`, and `archive candidates`) as normal commands; do not request escalated sandbox permissions for them.
 - In Codex `workspace-write` sessions, the configured Obsidian vault is usually outside the writable workspace. For any helper command that creates, updates, archives, restores, cleans up, or rebuilds the index, run the exact installed helper command with `sandbox_permissions=require_escalated` instead of first trying an un-escalated write.
 - When the helper prefix is already allowlisted, do not pass a new `prefix_rule` for routine wiki commands. If the tool API requires a `justification` with `sandbox_permissions=require_escalated`, keep it terse and operational, and do not phrase it as a request for another durable rule.

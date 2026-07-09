@@ -23,8 +23,8 @@ tasks:
       - rm -rf "{{.BUILD_DIR}}"
       - mkdir -p "{{.BUILD_DIR}}/scripts"
       - mkdir -p "{{.BUILD_DIR}}/commands"
-      - cp SKILL.md config.json "{{.BUILD_DIR}}/"
-      - cp scripts/obsidian_wiki.py "{{.BUILD_DIR}}/scripts/"
+      - cp SKILL.md config.json requirements.txt "{{.BUILD_DIR}}/"
+      - cp scripts/obsidian_wiki.py scripts/obsidian_wiki_mcp.py "{{.BUILD_DIR}}/scripts/"
       - cp commands/document.md commands/forge-document.md "{{.BUILD_DIR}}/commands/"
 
   install:
@@ -71,10 +71,13 @@ tasks:
     cmds:
       - test -f "{{.BUILD_DIR}}/SKILL.md"
       - test -f "{{.BUILD_DIR}}/config.json"
+      - test -f "{{.BUILD_DIR}}/requirements.txt"
       - test -f "{{.BUILD_DIR}}/scripts/obsidian_wiki.py"
+      - test -f "{{.BUILD_DIR}}/scripts/obsidian_wiki_mcp.py"
       - test -f "{{.BUILD_DIR}}/commands/document.md"
       - test -f "{{.BUILD_DIR}}/commands/forge-document.md"
       - '"{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/obsidian_wiki.py" --help'
+      - '"{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/obsidian_wiki_mcp.py" --help'
       - '"{{.PYTHON}}" -m unittest discover -s tests'
 
   verify:codex:
@@ -82,24 +85,33 @@ tasks:
     cmds:
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/SKILL.md"
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
+      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/requirements.txt"
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py"
+      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki_mcp.py"
       - test -f "{{.CODEX_PROMPTS_DIR}}/document.md"
       - '"{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py" --help'
+      - '"{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki_mcp.py" --help'
 
   verify:claude:
     desc: Verify the Claude Code installation
     cmds:
       - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/SKILL.md"
       - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
+      - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/requirements.txt"
       - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py"
+      - test -f "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki_mcp.py"
       - test -f "{{.CLAUDE_COMMANDS_DIR}}/document.md"
       - '"{{.PYTHON}}" "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py" --help'
+      - '"{{.PYTHON}}" "{{.CLAUDE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki_mcp.py" --help'
 
   verify:forge:
     desc: Verify the ForgeCode installation
     cmds:
       - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/SKILL.md"
       - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
+      - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/requirements.txt"
       - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py"
+      - test -f "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki_mcp.py"
       - test -f "{{.AGENTS_COMMANDS_DIR}}/document.md"
       - '"{{.PYTHON}}" "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki.py" --help'
+      - '"{{.PYTHON}}" "{{.FORGE_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/obsidian_wiki_mcp.py" --help'

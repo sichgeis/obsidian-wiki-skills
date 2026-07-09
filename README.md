@@ -13,8 +13,10 @@ Search is backed by a lightweight JSON index at `{vault_path}/{wiki_dir}/.obsidi
 - `SKILL.md`: agent-agnostic skill manifest and operating instructions.
 - `commands/`: slash-command wrappers that invoke the skill from supported agents.
 - `scripts/obsidian_wiki.py`: deterministic scan/read/create/update/index/archive/doctor tool for wiki documents.
+- `scripts/obsidian_wiki_mcp.py`: stdio MCP server exposing the same wiki operations as typed tools.
 - `config.json`: local default configuration used by the installed skill.
 - `config.example.json`: portable configuration template.
+- `requirements.txt`: Python runtime dependency list for the MCP server.
 - `docs/`: project documentation for maintainers.
 - `Taskfile.yml`: local development tasks.
 
@@ -70,15 +72,46 @@ Use it as `/document ...` in Codex and Claude Code. In ForgeCode, use the native
 
 Restart the target agent after installing or changing the skill so the skill manifest is reloaded.
 
+## MCP Server
+
+The package also includes a local stdio MCP server. MCP clients such as Codex launch this command as a child process and keep it alive while the client session is using the server:
+
+```bash
+python /path/to/obsidian-wiki/scripts/obsidian_wiki_mcp.py
+```
+
+Install the Python MCP SDK in the environment that will run the server:
+
+```bash
+pip install -r /path/to/obsidian-wiki/requirements.txt
+```
+
+Example Codex MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "obsidian-wiki": {
+      "command": "python",
+      "args": [
+        "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki_mcp.py"
+      ]
+    }
+  }
+}
+```
+
+The MCP server exposes typed tools for scanning, reading, creating, updating, indexing, archiving, restoring, cleaning up, and diagnosing wiki notes. It uses the same configuration precedence, path confinement, redaction, atomic writes, index refresh behavior, and archive behavior as `scripts/obsidian_wiki.py`.
+
 ## Codex Permissions
 
 For fast documentation runs in Codex, approve the installed helper prefix that matches the Python command Codex will actually run:
 
 ```text
-python3 /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py
+python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py
 ```
 
-Use `python` instead of `python3` only when that is the command available in the agent environment.
+Use `python3` instead of `python` only when that is the command available in the agent environment.
 
 Codex has two separate gates:
 
@@ -95,13 +128,13 @@ You can also ask the coding agent to add or update this allow rule for you. The 
 
 ```starlark
 prefix_rule(
-    pattern=["python3", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"],
+    pattern=["python", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"],
     decision="allow",
     justification="Allow the vetted Obsidian wiki helper without repeated prompts",
 )
 ```
 
-Use the same shape with `pattern=["python", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"]` if `python` is the command the agent will actually run.
+Use the same shape with `pattern=["python3", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"]` if `python3` is the command the agent will actually run.
 
 This trusts invocations of that helper script through the matching prefix; it is not a fine-grained audit of every file write or subprocess inside Python. Keep the helper small, deterministic, and path-constrained.
 
@@ -110,7 +143,7 @@ This rule covers the installed wiki helper only. It does not cover repository ma
 For Codex, keep the helper invocation itself simple so the prefix rule can match it. Read-only helper calls such as `scan`, `read`, `doctor`, `index status`, and `archive candidates` do not need escalated sandbox permissions. Use inline `--content` only for short, simple, single-line content. For multiline or quote-heavy Markdown, write the body to a temporary file in a sandbox-writable location such as `/private/tmp`, then call the helper with `--content-file`:
 
 ```bash
-python3 /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py update \
+python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py update \
   --path "Wiki/my-project/authentication-flow.md" \
   --mode replace \
   --section "Session Handling" \
@@ -196,7 +229,7 @@ Run:
 task verify
 ```
 
-This builds the package, checks the script entrypoint, and runs the unit tests.
+This builds the package, checks the CLI and MCP script entrypoints, and runs the unit tests.
 
 After installing, verify agent-specific installs with:
 
@@ -210,6 +243,7 @@ You can also run the built or installed script directly:
 
 ```bash
 python dist/obsidian-wiki/scripts/obsidian_wiki.py --help
+python dist/obsidian-wiki/scripts/obsidian_wiki_mcp.py --help
 ```
 
 ## Configuration

@@ -54,13 +54,27 @@ Normal `scan` excludes archived notes. `scan --include-archived` returns archive
 
 ## Agent Package
 
-The repository builds one agent-agnostic skill package. The same `SKILL.md`, `config.json`, and `scripts/obsidian_wiki.py` are copied to each supported agent location:
+The repository builds one agent-agnostic skill package. The same `SKILL.md`, `config.json`, CLI helper, MCP server, and dependency declaration are copied to each supported agent location:
 
 - Codex: `~/.codex/skills/obsidian-wiki`
 - Claude Code: `~/.claude/skills/obsidian-wiki`
 - ForgeCode: `~/.forge/skills/obsidian-wiki`
 
 The skill instructions avoid agent-specific paths. Agents should resolve the script relative to the loaded skill directory.
+
+## MCP Server
+
+`scripts/obsidian_wiki_mcp.py` is a stdio MCP server built with the Python MCP SDK. It is an additional runtime surface over the same domain functions as `scripts/obsidian_wiki.py`; it does not implement a separate write path.
+
+The server exposes typed tools for scan, read, create, update, add-frontmatter, index status/rebuild, archive candidates/apply/restore/cleanup/status, and doctor diagnostics. Each tool resolves the active project root, configuration, and project name before calling the existing helper functions. Optional `project_root` and `project` arguments let MCP clients override those values when their server process cwd is not the repository being documented.
+
+Codex and other MCP clients normally launch the server command as a child process:
+
+```text
+python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki_mcp.py
+```
+
+The process stays alive while the MCP client uses it and exits when the client disconnects. The Python environment that launches the server must have `requirements.txt` installed.
 
 ## Document Command
 
@@ -77,13 +91,13 @@ The command files are thin wrappers. The actual wiki behavior remains governed b
 Codex should run the installed script directly with a reusable command prefix matching the Python command available in the agent environment:
 
 ```text
-python3 /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py
+python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py
 ```
 
-Use `python` instead when that is the command the agent will actually run:
+Use `python3` instead when that is the command the agent will actually run:
 
 ```text
-python /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py
+python3 /Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py
 ```
 
 Codex approvals are command-prefix based, not skill-name based. This repository cannot declare a semantic "allow all obsidian-wiki skill calls" rule by itself. The interpreter token is part of the matched prefix, so `python .../obsidian_wiki.py` and `python3 .../obsidian_wiki.py` need separate rules. The command allowlist is also separate from filesystem sandboxing: the helper can be an approved command and still need escalated sandbox permissions when it writes to an Obsidian vault outside the active workspace.
@@ -99,13 +113,13 @@ For durable allowlisting, configure Codex Rules outside the skill, for example i
 
 ```starlark
 prefix_rule(
-    pattern=["python3", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"],
+    pattern=["python", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"],
     decision="allow",
     justification="Allow the vetted Obsidian wiki helper without repeated prompts",
 )
 ```
 
-For `python` environments, use the same rule with `pattern=["python", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"]`.
+For `python3` environments, use the same rule with `pattern=["python3", "/Users/christian/.codex/skills/obsidian-wiki/scripts/obsidian_wiki.py"]`.
 
 This allowlist trusts commands that start with the matching script prefix. It does not inspect every file write, network call, or subprocess inside the Python process, so the helper should remain small, deterministic, and constrained to the configured vault.
 
@@ -145,7 +159,9 @@ The script rejects writes outside the configured vault root.
 
 - `SKILL.md`
 - `config.json`
+- `requirements.txt`
 - `scripts/obsidian_wiki.py`
+- `scripts/obsidian_wiki_mcp.py`
 - `commands/document.md`
 - `commands/forge-document.md`
 
