@@ -11,6 +11,9 @@ vars:
     sh: printf %s "$HOME"
   BUILD_ROOT: dist
   BUILD_DIR: "{{.BUILD_ROOT}}/{{.SKILL_NAME}}"
+  PLUGIN_BUILD_DIR: "{{.BUILD_ROOT}}/{{.SKILL_NAME}}-plugin"
+  PLUGIN_MARKETPLACE_DIR: "{{.BUILD_ROOT}}/{{.SKILL_NAME}}-marketplace"
+  PLUGIN_VALIDATOR: "{{.HOME_DIR}}/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py"
   CODEX_SKILLS_DIR: "{{.HOME_DIR}}/.codex/skills"
   CODEX_PROMPTS_DIR: "{{.HOME_DIR}}/.codex/prompts"
 
@@ -23,9 +26,58 @@ tasks:
       - rm -rf "{{.BUILD_ROOT}}/{{.LEGACY_SKILL_PREFIX}}-{{.LEGACY_SKILL_SUFFIX}}"
       - mkdir -p "{{.BUILD_DIR}}/scripts"
       - mkdir -p "{{.BUILD_DIR}}/agents"
+      - mkdir -p "{{.BUILD_DIR}}/docs/reference"
       - cp SKILL.md config.json requirements.txt "{{.BUILD_DIR}}/"
       - cp scripts/fundus.py scripts/fundus_mcp.py "{{.BUILD_DIR}}/scripts/"
       - cp agents/openai.yaml "{{.BUILD_DIR}}/agents/openai.yaml"
+      - cp docs/reference/*.md "{{.BUILD_DIR}}/docs/reference/"
+
+  build:plugin:
+    desc: Build the Codex plugin package
+    deps: [build]
+    run: once
+    cmds:
+      - rm -rf "{{.PLUGIN_BUILD_DIR}}"
+      - mkdir -p "{{.PLUGIN_BUILD_DIR}}/.codex-plugin"
+      - mkdir -p "{{.PLUGIN_BUILD_DIR}}/skills"
+      - cp .codex-plugin/plugin.json "{{.PLUGIN_BUILD_DIR}}/.codex-plugin/plugin.json"
+      - cp .mcp.json "{{.PLUGIN_BUILD_DIR}}/.mcp.json"
+      - cp -R "{{.BUILD_DIR}}" "{{.PLUGIN_BUILD_DIR}}/skills/{{.SKILL_NAME}}"
+
+  build:plugin-marketplace:
+    desc: Build a local marketplace folder for plugin testing
+    deps: [build:plugin]
+    run: once
+    cmds:
+      - rm -rf "{{.PLUGIN_MARKETPLACE_DIR}}"
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/build_plugin_marketplace.py "{{.PLUGIN_MARKETPLACE_DIR}}" "{{.PLUGIN_BUILD_DIR}}" "{{.SKILL_NAME}}"
+
+  plugin:refresh:
+    desc: Build the local plugin marketplace for Codex testing
+    deps: [build:plugin-marketplace]
+
+  migrate:dry-run:
+    desc: Inspect the Wiki to Fundus migration plan
+    deps: [build]
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/fundus.py" migrate wiki-to-fundus --dry-run
+
+  migrate:apply:
+    desc: Apply the Wiki to Fundus migration through backup, staging, verification, and source retirement
+    deps: [build]
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/fundus.py" migrate wiki-to-fundus --apply
+
+  migrate:verify:
+    desc: Verify the canonical Fundus corpus after migration
+    deps: [build]
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/fundus.py" migrate wiki-to-fundus --verify
+
+  audit:tokens:
+    desc: Measure skill, plugin, MCP, and representative output footprint
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/audit_token_budget.py
 
   install:
     desc: Install the skill for Codex
@@ -43,17 +95,35 @@ tasks:
       - cp -R "{{.BUILD_DIR}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}"
 
   verify:
-    desc: Verify the built skill package and script entrypoint
-    deps: [build]
+    desc: Verify the built skill and plugin packages
+    deps: [build, build:plugin, build:plugin-marketplace]
     cmds:
       - test -f "{{.BUILD_DIR}}/SKILL.md"
       - test -f "{{.BUILD_DIR}}/config.json"
       - test -f "{{.BUILD_DIR}}/requirements.txt"
       - test -f "{{.BUILD_DIR}}/agents/openai.yaml"
+      - test -f "{{.BUILD_DIR}}/docs/reference/fundus-cli-reference.md"
+      - test -f "{{.BUILD_DIR}}/docs/reference/fundus-workbench-examples.md"
       - test -f "{{.BUILD_DIR}}/scripts/fundus.py"
       - test -f "{{.BUILD_DIR}}/scripts/fundus_mcp.py"
+      - test -f "{{.PLUGIN_BUILD_DIR}}/.codex-plugin/plugin.json"
+      - test -f "{{.PLUGIN_BUILD_DIR}}/.mcp.json"
+      - test -f "{{.PLUGIN_BUILD_DIR}}/skills/{{.SKILL_NAME}}/SKILL.md"
+      - test -f "{{.PLUGIN_MARKETPLACE_DIR}}/.agents/plugins/marketplace.json"
+      - test -f "{{.PLUGIN_MARKETPLACE_DIR}}/plugins/{{.SKILL_NAME}}/.codex-plugin/plugin.json"
       - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/fundus.py" --help
       - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/fundus_mcp.py" --help
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.BUILD_DIR}}/scripts/fundus_mcp.py" --check
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/audit_token_budget.py
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/validate_plugin_package.py "{{.PLUGIN_BUILD_DIR}}"
+      - |
+        if test -f "{{.PLUGIN_VALIDATOR}}"; then
+          if PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('yaml') else 1)"; then
+            PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.PLUGIN_VALIDATOR}}" "{{.PLUGIN_BUILD_DIR}}"
+          else
+            echo "Skipping external plugin validator: PyYAML is not installed for {{.PYTHON}}"
+          fi
+        fi
       - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" -m unittest discover -s tests
 
   verify:codex:
@@ -63,7 +133,10 @@ tasks:
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/requirements.txt"
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/agents/openai.yaml"
+      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/docs/reference/fundus-cli-reference.md"
+      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/docs/reference/fundus-workbench-examples.md"
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py"
       - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py"
       - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py" --help
       - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py" --help
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py" --check

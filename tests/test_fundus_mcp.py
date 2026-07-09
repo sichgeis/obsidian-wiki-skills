@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import sys
 import tempfile
@@ -108,6 +109,31 @@ class McpWrapperTest(McpFundusTestCase):
         self.assertEqual(scanned["scope_path"], "Epics/AI Agent Templates")
         self.assertEqual(scanned["documents"][0]["path"], created["path"])
         self.assertIn("type: Epic", body)
+
+    def test_create_note_supports_retrieval_metadata(self) -> None:
+        created = fundus_mcp.create_note(
+            "Prompt Boundary",
+            "Body",
+            ["domain"],
+            aliases=["Prompt Surface"],
+            resource="https://jira.example/browse/BACKEND-2291",
+            last_verified="2026-07-09",
+            project="demo",
+            project_root=str(self.project_root),
+        )
+        fundus_mcp.index_rebuild(project_root=str(self.project_root))
+
+        scanned = fundus_mcp.scan_fundus(
+            query="prompt surface",
+            project="demo",
+            project_root=str(self.project_root),
+        )
+        body = fundus_mcp.read_note(created["path"], project_root=str(self.project_root))
+
+        self.assertEqual(scanned["documents"][0]["aliases"], ["Prompt Surface"])
+        self.assertEqual(scanned["documents"][0]["last_verified"], "2026-07-09")
+        self.assertIn("aliases:", body)
+        self.assertIn("resource: https://jira.example/browse/BACKEND-2291", body)
 
     def test_update_note_redacts_and_refreshes_existing_index(self) -> None:
         created = fundus_mcp.create_note(
@@ -240,6 +266,86 @@ class McpWrapperTest(McpFundusTestCase):
         self.assertEqual(frontmatter["scope_path"], "demo")
         self.assertEqual(frontmatter["project"], "demo")
         self.assertEqual(body, "\n# Legacy\n\nBody\n")
+
+    def test_migration_wrapper_dry_run_apply_and_verify(self) -> None:
+        wiki_note = self.vault_path / "Wiki" / "demo" / "legacy.md"
+        wiki_note.parent.mkdir(parents=True, exist_ok=True)
+        wiki_note.write_text(
+            "---\n"
+            "title: Legacy\n"
+            "created: 2026-01-01T00:00:00+00:00\n"
+            "updated: 2026-01-02T00:00:00+00:00\n"
+            "project: old\n"
+            "tags:\n"
+            "  - wiki\n"
+            "---\n\n"
+            "# Legacy\n\nBody\n"
+        )
+
+        dry_run = fundus_mcp.migrate_wiki_to_fundus("dry-run", project_root=str(self.project_root))
+        applied = fundus_mcp.migrate_wiki_to_fundus("apply", retire_source="keep", project_root=str(self.project_root))
+        verified = fundus_mcp.migrate_wiki_to_fundus("verify", project_root=str(self.project_root))
+
+        self.assertEqual(dry_run["counts"]["markdown"], 1)
+        self.assertEqual(applied["copied_count"], 1)
+        self.assertTrue(verified["passed"])
+        self.assertTrue((self.vault_path / "Wiki").exists())
+        self.assertTrue((self.vault_path / "Fundus" / "demo" / "legacy.md").exists())
+
+
+class McpProtocolTest(McpFundusTestCase):
+    def test_server_initializes_and_lists_tools_without_external_sdk(self) -> None:
+        server = fundus_mcp.build_server()
+
+        initialized = server.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18"},
+            }
+        )
+        listed = server.handle_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        tools = {tool["name"]: tool for tool in listed["result"]["tools"]}
+
+        self.assertEqual(initialized["result"]["serverInfo"]["name"], "fundus")
+        self.assertIn("tools", initialized["result"]["capabilities"])
+        self.assertIn("migrate_wiki_to_fundus", tools)
+        self.assertEqual(tools["create_note"]["inputSchema"]["properties"]["aliases"]["type"], "array")
+        self.assertEqual(tools["update_note"]["inputSchema"]["properties"]["mode"]["enum"], ["append", "replace", "rewrite"])
+
+    def test_tool_call_returns_text_content_payload(self) -> None:
+        server = fundus_mcp.build_server()
+
+        response = server.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "create_note",
+                    "arguments": {
+                        "title": "Workbench Note",
+                        "content": "Body",
+                        "project": "demo",
+                        "project_root": str(self.project_root),
+                    },
+                },
+            }
+        )
+        payload = json.loads(response["result"]["content"][0]["text"])
+
+        self.assertEqual(payload["path"], "Fundus/demo/workbench-note.md")
+        self.assertTrue((self.vault_path / "Fundus" / "demo" / "workbench-note.md").exists())
+
+    def test_stdio_message_framing_round_trips(self) -> None:
+        message = {"jsonrpc": "2.0", "id": 4, "method": "ping"}
+        stream = io.BytesIO()
+
+        fundus_mcp.write_stdio_message(stream, message)
+        stream.seek(0)
+
+        self.assertEqual(fundus_mcp.read_stdio_message(stream), message)
 
 
 if __name__ == "__main__":

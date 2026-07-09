@@ -30,7 +30,7 @@ This is the primary file for multi-pass implementation. A coding agent should re
 ### Implemented And Keep
 
 - Codex skill package build and install via `Taskfile.yml`.
-- Runtime package in `dist/fundus` with `SKILL.md`, `config.json`, `requirements.txt`, `agents/openai.yaml`, `scripts/fundus.py`, and `scripts/fundus_mcp.py`.
+- Runtime package in `dist/fundus` with `SKILL.md`, `config.json`, dependency-free `requirements.txt`, `agents/openai.yaml`, `scripts/fundus.py`, and `scripts/fundus_mcp.py`.
 - Local default config points to `/Users/christian/vault/Hypatos/Fundus`.
 - Project and area scopes exist; `--project` and `--area` are mutually exclusive.
 - Area paths are constrained below the configured Fundus root.
@@ -39,50 +39,46 @@ This is the primary file for multi-pass implementation. A coding agent should re
 - Create writes OKF-compatible frontmatter and removes duplicate matching H1 content.
 - Update supports append, section replace, and full rewrite.
 - Backup support exists for the configured Fundus directory under `{vault_path}/.fundus-backups/`.
-- Index support exists with compact metadata, ticket IDs, headings, excerpts, and index status.
+- Migration support exists for `Wiki/` to `Fundus/` through dry-run, staged apply, verification, backup, index rebuild, and source retirement.
+- The live Hypatos corpus was migrated to `/Users/christian/vault/Hypatos/Fundus` on 2026-07-09; the old source is retired as `/Users/christian/vault/Hypatos/Wiki.migrated-20260709T182817+0200-wiki-to-fundus-resume`.
+- Index support exists with compact metadata, aliases, resources, ticket IDs, headings, excerpts, confidence, and index status.
 - Normal scan excludes archived notes; explicit `--include-archived` includes them.
 - Archive mirrors nested area paths under `Fundus/_archive/...` and restore uses `original_path`.
-- MCP server exists and wraps the helper domain functions through typed tools.
+- Dependency-free MCP server exists and wraps the helper domain functions through typed tools.
+- Codex plugin packaging exists at `.codex-plugin/plugin.json`, `.mcp.json`, and `dist/fundus-plugin`.
+- Local plugin marketplace generation exists at `dist/fundus-marketplace`.
+- The local Codex plugin is installed as `fundus@fundus-local` in this environment.
+- `SKILL.md` is compact and long command/example material lives under `docs/reference/`.
+- Token/output footprint audit exists through `scripts/audit_token_budget.py` and `task audit:tokens`.
 - `fundus_mcp.py --check` validates server construction.
 - Tests cover many helper and MCP flows.
 
 ### Partial Or Needs Care
 
-- The configured target is `Fundus/`, but the live corpus is still under `Wiki/`; migration is not implemented.
-- The index already supports compact retrieval, but the target calls for stronger alias/resource signals, compact confidence/reason metadata, and output auditing.
-- Optional metadata fields such as `aliases`, `resource`, `status`, `owner`, and `last_verified` are part of the target profile, but creation and retrieval behavior still need a deliberate implementation pass.
-- MCP exists, but its tool descriptions, instruction footprint, and write outputs have not been optimized for token conservation.
-- Permission docs exist for helper fallback; plugin/MCP approval guidance still needs final treatment when plugin packaging lands.
-- `SKILL.md` is functional, but not yet the compact future workbench contract.
+- Future tuning may still improve individual MCP tool descriptions.
+- A new Codex thread or app restart may be needed before the freshly installed plugin capabilities appear in the active tool list.
+- Remote/team sharing and complex graph visualization remain intentionally out of first-release scope.
 
 ### Not Yet Implemented
 
-- One-time `Wiki/` to `Fundus/` migration dry-run/apply/verify workflow.
-- Staged migration promotion and old `Wiki/` retirement.
-- Strict reserved-file cleanup for migrated active `index.md` and `log.md`.
-- Migration verification report and retrieval smoke tests.
-- Codex plugin manifest and plugin package layout.
-- Local marketplace refresh task.
-- Plugin verification task.
-- Split reference docs for long command catalogs and maintenance guidance.
-- Token and output footprint audit.
-- First-release examples/tests for natural save intent, scope inference, tiered retrieval, and stale-note proposals.
+- No known first-release implementation gaps remain in the repository.
+- No known live installation or migration gaps remain in this environment.
 
 ## Phase Status Board
 
 | Phase | Status | Current Meaning |
 | --- | --- | --- |
-| P0 - Migration Design And Safety | planned | Backup exists, but migration command/workflow does not. |
-| P1 - Migration Transformation Rules | planned | Normalization exists; migration transforms still need implementation. |
-| P2 - Migration Verification | planned | Index/doctor exist; migration-specific verification is missing. |
-| P3 - Core Helper And Index Behavior | partial | Active scans, archive exclusion, and index exist; confidence/alias/resource/output audit still missing. |
-| P4 - Compact Skill For Progressive Disclosure | planned | Current `SKILL.md` is functional but too long for the target. |
-| P5 - MCP Happy Path | partial | MCP exists; tool metadata/output compactness and workflow bias need work. |
-| P6 - Plugin Package Skeleton | planned | Direct skill package exists; plugin package does not. |
-| P7 - Snappy Install And Dev Loop | partial | Direct skill build/verify exists; plugin and migration tasks missing. |
-| P8 - Permission And Vault Friction | partial | Helper fallback permissions documented; plugin/MCP approval guidance pending. |
-| P9 - Token Budget And Output Audit | planned | No measured audit yet. |
-| P10 - First-Release Workbench Polish | planned | Target UX is specified; examples/tests still missing. |
+| P0 - Migration Design And Safety | done | `migrate wiki-to-fundus` supports dry-run/apply/verify with backup, staging, and source retirement. |
+| P1 - Migration Transformation Rules | done | Active notes normalize to local OKF profile; reserved files lose frontmatter; archives are preserved under `_archive`. |
+| P2 - Migration Verification | done | Verification reports structure, issues, index state, and bounded smoke-search results. |
+| P3 - Core Helper And Index Behavior | done | Active scans exclude archives by default; aliases/resources/ticket IDs/reasons/confidence are indexed. |
+| P4 - Compact Skill For Progressive Disclosure | done | `SKILL.md` is compact and command/example details moved into installed references. |
+| P5 - MCP Happy Path | done | MCP wraps normal flows plus metadata and migration, with compact helper outputs. |
+| P6 - Plugin Package Skeleton | done | Plugin manifest, MCP companion file, and `dist/fundus-plugin` build exist. |
+| P7 - Snappy Install And Dev Loop | done | Skill/plugin/marketplace build tasks, migration tasks, token audit, validator hook, and verify flow exist. |
+| P8 - Permission And Vault Friction | done | Compact skill and docs describe helper, vault, plugin, and escalation behavior. |
+| P9 - Token Budget And Output Audit | done | `scripts/audit_token_budget.py` measures skill/plugin/MCP/reference and sample scan output footprint. |
+| P10 - First-Release Workbench Polish | done | Installed examples document search, save, update, scope inference, research, and stale-note proposal flows. |
 
 ## Pass Protocol
 
@@ -114,7 +110,7 @@ At the end of a pass:
 
 ### P0 - Migration Design And Safety
 
-Status: planned
+Status: done
 
 Goal:
 
@@ -145,7 +141,7 @@ Acceptance criteria:
 
 ### P1 - Migration Transformation Rules
 
-Status: planned
+Status: done
 
 Spec:
 
@@ -180,7 +176,7 @@ Acceptance criteria:
 
 ### P2 - Migration Verification
 
-Status: planned
+Status: done
 
 Spec:
 
@@ -208,7 +204,7 @@ Acceptance criteria:
 
 ### P3 - Core Helper And Index Behavior
 
-Status: partial
+Status: done
 
 Spec:
 
@@ -229,7 +225,7 @@ Acceptance criteria:
 
 ### P4 - Compact Skill For Progressive Disclosure
 
-Status: planned
+Status: done
 
 Spec:
 
@@ -252,7 +248,7 @@ Acceptance criteria:
 
 ### P5 - MCP Happy Path
 
-Status: partial
+Status: done
 
 Spec:
 
@@ -275,7 +271,7 @@ Acceptance criteria:
 
 ### P6 - Plugin Package Skeleton
 
-Status: planned
+Status: done
 
 Spec:
 
@@ -295,7 +291,7 @@ Acceptance criteria:
 
 ### P7 - Snappy Install And Dev Loop
 
-Status: partial
+Status: done
 
 Spec:
 
@@ -307,7 +303,7 @@ Spec:
   - migration apply
   - verification
 - Add a tiny MCP smoke check using `fundus_mcp.py --check`.
-- Add dependency diagnostics for missing Python MCP SDK.
+- Keep the MCP smoke check dependency-free with `fundus_mcp.py --check`.
 - Update README with the direct skill path, migration path, and plugin install path.
 
 Acceptance criteria:
@@ -318,7 +314,7 @@ Acceptance criteria:
 
 ### P8 - Permission And Vault Friction
 
-Status: partial
+Status: done
 
 Spec:
 
@@ -338,7 +334,7 @@ Acceptance criteria:
 
 ### P9 - Token Budget And Output Audit
 
-Status: planned
+Status: done
 
 Spec:
 
@@ -359,7 +355,7 @@ Acceptance criteria:
 
 ### P10 - First-Release Workbench Polish
 
-Status: planned
+Status: done
 
 Spec:
 
@@ -384,67 +380,62 @@ Acceptance criteria:
 
 ### Migration
 
-- [ ] Add Wiki to Fundus migration dry-run.
-- [ ] Add pre-migration backup.
-- [ ] Add staged migration apply.
-- [ ] Copy active notes to `Fundus/`.
-- [ ] Copy archived notes to `Fundus/_archive/`.
-- [ ] Remove frontmatter from active `index.md` and `log.md`.
-- [ ] Normalize active concept frontmatter to the Fundus local OKF-compatible profile.
-- [ ] Preserve unknown concept-note frontmatter fields.
-- [ ] Convert default `wiki` tags to `fundus` tags where appropriate.
-- [ ] Build the Fundus index after migration.
-- [ ] Verify structure and retrieval smoke tests.
-- [ ] Retire old `Wiki/` as a live source after successful migration.
+- [x] Add Wiki to Fundus migration dry-run.
+- [x] Add pre-migration backup.
+- [x] Add staged migration apply.
+- [x] Copy active notes to `Fundus/`.
+- [x] Copy archived notes to `Fundus/_archive/`.
+- [x] Remove frontmatter from active `index.md` and `log.md`.
+- [x] Normalize active concept frontmatter to the Fundus local OKF-compatible profile.
+- [x] Preserve unknown concept-note frontmatter fields.
+- [x] Convert default `wiki` tags to `fundus` tags where appropriate.
+- [x] Build the Fundus index after migration.
+- [x] Verify structure and retrieval smoke tests.
+- [x] Retire old `Wiki/` as a live source after successful migration.
 
 ### Retrieval And Evidence
 
-- [ ] Ensure normal scans exclude archives.
-- [ ] Keep archive lookup explicit.
-- [ ] Add compact match reasons and confidence signals.
-- [ ] Index aliases, resources, ticket IDs, headings, links, and short excerpts.
-- [ ] Add brief Fundus citation guidance to the skill.
-- [ ] Add stale-note proposal guidance to the skill.
+- [x] Ensure normal scans exclude archives.
+- [x] Keep archive lookup explicit.
+- [x] Add compact match reasons and confidence signals.
+- [x] Index aliases, resources, ticket IDs, headings, links, and short excerpts.
+- [x] Add brief Fundus citation guidance to the skill.
+- [x] Add stale-note proposal guidance to the skill.
 
 ### Writes
 
-- [ ] Make create/update output compact.
-- [ ] Support natural durable save intent in skill instructions.
-- [ ] Encode source hierarchy in skill instructions.
-- [ ] Keep direct note editing forbidden.
-- [ ] Add optional `aliases`, `resource`, `status`, `owner`, and `last_verified` support where useful.
+- [x] Make create/update output compact.
+- [x] Support natural durable save intent in skill instructions.
+- [x] Encode source hierarchy in skill instructions.
+- [x] Keep direct note editing forbidden.
+- [x] Add optional `aliases`, `resource`, `status`, `owner`, and `last_verified` support where useful.
 
 ### Plugin
 
-- [ ] Add plugin manifest.
-- [ ] Generate plugin runtime layout in `dist/fundus-plugin`.
-- [ ] Bundle skill and MCP server.
-- [ ] Add local marketplace metadata.
-- [ ] Add plugin verification task.
-- [ ] Keep direct skill install until plugin path is proven.
+- [x] Add plugin manifest.
+- [x] Generate plugin runtime layout in `dist/fundus-plugin`.
+- [x] Bundle skill and dependency-free MCP server.
+- [x] Add local marketplace metadata.
+- [x] Add plugin verification task.
+- [x] Keep direct skill install until plugin path is proven.
 
 ### Documentation
 
-- [ ] Keep README current as migration and plugin packaging land.
-- [ ] Keep implementation docs current as helper, MCP, migration, and plugin architecture land.
-- [ ] Split long skill reference material into `docs/reference/`.
-- [ ] Document permission model clearly.
-- [ ] Document first-release out-of-scope items: team sharing and complex graph visualization.
+- [x] Keep README current as migration and plugin packaging land.
+- [x] Keep implementation docs current as helper, MCP, migration, and plugin architecture land.
+- [x] Split long skill reference material into `docs/reference/`.
+- [x] Document permission model clearly.
+- [x] Document first-release out-of-scope items: team sharing and complex graph visualization.
 
 ## Open Implementation Choices
 
 These are implementation choices, not product/domain blockers:
 
-1. Whether migration is a `fundus.py migrate wiki-to-fundus` subcommand or a separate one-time script.
-   Recommended default: start with a subcommand unless the implementation becomes awkward.
-2. The exact old `Wiki/` retirement shape after successful migration.
-   Recommended default: choose the simplest safe option after backup and verification; do not spend effort on elaborate archive curation.
-3. Whether archived legacy notes missing `type` get a cheap `type: Note` during migration or remain as-is.
-   Recommended default: add `type: Note` only if it is automatic and clearly safe.
-4. Whether `last_verified` should be automatically set only after source-code inspection, or also after Jira/GitHub/Confluence verification.
-   Recommended default: be conservative; set it when the agent knows what source verified the note.
-5. Whether plugin packaging should include all maintenance MCP tools enabled by default or rely on guidance to keep normal workflows focused.
-   Recommended default: include maintenance tools but bias descriptions and skill instructions toward normal search/read/create/update/doctor flows.
+1. Migration shape: decided as `fundus.py migrate wiki-to-fundus`.
+2. Old `Wiki/` retirement: decided as rename by default after successful backup, staging, promotion, index rebuild, and verification.
+3. Archived legacy notes missing `type`: decided to preserve archive metadata as-is instead of over-normalizing archives.
+4. `last_verified`: supported as explicit metadata; agents should set it only when they know which source verified the note.
+5. Plugin MCP tools: maintenance tools are included; skill instructions bias normal workflows toward search/read/create/update/doctor.
 
 ## Suggested Execution Order
 
@@ -461,3 +452,4 @@ These are implementation choices, not product/domain blockers:
 ## Progress Log
 
 - 2026-07-09: Documentation split into target picture, active implementation tracker, and current implementation notes for multi-pass agent work.
+- 2026-07-09: Implemented migration dry-run/apply/verify, metadata-aware retrieval, compact skill references, MCP migration parity, plugin packaging, local marketplace generation, token audit, and first-release workbench examples.

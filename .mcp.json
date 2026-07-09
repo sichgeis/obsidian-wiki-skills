@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "fundus": {
+      "command": "python",
+      "args": [
+        "./skills/fundus/scripts/fundus_mcp.py"
+      ],
+      "cwd": "."
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "fundus",
+  "version": "0.1.0",
+  "description": "Search, save, update, and curate Christian's personal Fundus work knowledge base from Codex.",
+  "author": {
+    "name": "Christian",
+    "url": "https://github.com/sichgeis"
+  },
+  "homepage": "https://github.com/sichgeis/fundus-skill",
+  "repository": "https://github.com/sichgeis/fundus-skill",
+  "license": "MIT",
+  "keywords": [
+    "fundus",
+    "knowledge-base",
+    "obsidian",
+    "codex",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Fundus",
+    "shortDescription": "Search and curate durable work knowledge",
+    "longDescription": "Fundus gives Codex a local, explicit workbench for durable project, epic, domain, ticket, and architecture knowledge. It treats Fundus as evidence, keeps source code authoritative, and uses dependency-free MCP tools for search, save, update, migration, archive, and verification workflows.",
+    "developerName": "Christian",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/sichgeis/fundus-skill",
+    "privacyPolicyURL": "https://openai.com/policies/privacy-policy/",
+    "termsOfServiceURL": "https://openai.com/policies/terms-of-use/",
+    "defaultPrompt": [
+      "Search Fundus for this ticket",
+      "Save this finding into Fundus",
+      "Update the relevant Fundus note"
+    ],
+    "brandColor": "#2563EB"
+  }
+}

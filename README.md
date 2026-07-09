@@ -2,7 +2,7 @@
 
 This repository is the source of truth for the local Codex `fundus` skill.
 
-The skill persists codebase knowledge into an Obsidian vault as per-repository Fundus documents and explicit cross-repository areas. It is packaged for Codex, with an optional local MCP server for typed Fundus tools.
+The skill persists codebase knowledge into an Obsidian vault as per-repository Fundus documents and explicit cross-repository areas. It is packaged for Codex with a dependency-free local MCP server for typed Fundus tools.
 
 Existing Fundus documents can be updated by appending content, replacing a named heading section, or rewriting the full article body with `update --mode rewrite`.
 Created documents keep one generated top-level title heading; duplicate matching H1 headings in supplied content are removed automatically.
@@ -14,7 +14,7 @@ Fundus is being refined into Christian's personal Codex workbench for durable wo
 
 Fundus is evidence, not authority. Source code remains the source of truth for implemented behavior; Fundus helps discover business ideas, technical concepts, prior decisions, and discussion history. When Fundus appears stale, Codex should propose a concise correction instead of silently rewriting it, unless the user explicitly asks to propagate new learning into Fundus.
 
-The live legacy corpus currently exists under `/Users/christian/vault/Hypatos/Wiki`. The target canonical corpus is `/Users/christian/vault/Hypatos/Fundus`. The next major setup work is a verified one-time migration from `Wiki/` to `Fundus/`, including active notes, quiet archived-note preservation, strict reserved-file cleanup for `index.md` and `log.md`, and an index rebuild. Start implementation work from `docs/agent-implementation-tracker.md`.
+The canonical live corpus is `/Users/christian/vault/Hypatos/Fundus`. The old `Wiki/` source was migrated on 2026-07-09, verified, backed up, and retired as `/Users/christian/vault/Hypatos/Wiki.migrated-20260709T182817+0200-wiki-to-fundus-resume`.
 
 ## Layout
 
@@ -24,7 +24,7 @@ The live legacy corpus currently exists under `/Users/christian/vault/Hypatos/Wi
 - `scripts/fundus_mcp.py`: stdio MCP server exposing the same Fundus operations as typed tools.
 - `config.json`: local default configuration used by the installed skill.
 - `config.example.json`: portable configuration template.
-- `requirements.txt`: Python runtime dependency list for the MCP server.
+- `requirements.txt`: dependency-free runtime marker kept for packaging symmetry.
 - `docs/`: project documentation for maintainers.
 - `Taskfile.yml`: local development tasks.
 
@@ -42,13 +42,13 @@ Run:
 task build
 ```
 
-The build task creates:
+The build task creates the direct skill package:
 
 ```text
 dist/fundus
 ```
 
-Only runtime files are copied into the package.
+Use `task build:plugin` for `dist/fundus-plugin` and `task plugin:refresh` for the generated local marketplace at `dist/fundus-marketplace`.
 
 ## Install
 
@@ -80,10 +80,10 @@ The package also includes a local stdio MCP server. Codex launches this command 
 python /path/to/fundus/scripts/fundus_mcp.py
 ```
 
-Install the Python MCP SDK in the environment that will run the server:
+The server is self-contained and uses only the Python standard library plus the bundled Fundus helper. Check that it can start with:
 
 ```bash
-pip install -r /path/to/fundus/requirements.txt
+python /path/to/fundus/scripts/fundus_mcp.py --check
 ```
 
 Example `~/.codex/config.toml` entry:
@@ -101,6 +101,36 @@ codex mcp add fundus -- python /Users/christian/.codex/skills/fundus/scripts/fun
 ```
 
 The MCP server exposes typed tools for scanning, reading, creating, updating, moving, backing up, area initialization, indexing, archiving, restoring, cleaning up, and diagnosing Fundus notes. It uses the same configuration precedence, path confinement, redaction, atomic writes, index refresh behavior, and archive behavior as `scripts/fundus.py`.
+
+## Plugin Package
+
+Build the plugin package and local marketplace:
+
+```bash
+task build:plugin
+task plugin:refresh
+```
+
+The generated plugin root is:
+
+```text
+dist/fundus-plugin
+```
+
+The generated test marketplace is:
+
+```text
+dist/fundus-marketplace/.agents/plugins/marketplace.json
+```
+
+Install that explicit local marketplace only when testing the plugin path:
+
+```bash
+codex plugin marketplace add /Users/christian/projects/fundus-skill/dist/fundus-marketplace
+codex plugin add fundus@fundus-local
+```
+
+This local plugin is installed in this Codex environment as `fundus@fundus-local`.
 
 ## Project And Area Scopes
 
@@ -121,6 +151,17 @@ python dist/fundus/scripts/fundus.py create --area "Epics/AI Agent Templates" --
 `--project` and `--area` are mutually exclusive. Area paths are always relative to `{vault_path}/{fundus_dir}` and cannot target reserved directories or escape the Fundus root.
 
 New notes get OKF-compatible frontmatter (`type`, `title`, `description`, `id`, `scope`, `scope_path`, `timestamp`, `created`, `updated`, and `tags`) while legacy project notes remain readable and updateable.
+
+Use optional metadata when it improves retrieval:
+
+```bash
+python dist/fundus/scripts/fundus.py create \
+  --title "Prompt Authoring Boundary" \
+  --alias BACKEND-2291 \
+  --resource "https://jira.example/browse/BACKEND-2291" \
+  --last-verified 2026-07-09 \
+  --content-file /tmp/note.md
+```
 
 Initialize an area skeleton only when explicitly starting a new area:
 
@@ -171,6 +212,28 @@ python dist/fundus/scripts/fundus.py backup inspect --id 20260709T103010+0200-pr
 ```
 
 Backups are stored under `{vault_path}/.fundus-backups/`, outside the indexed `Fundus/` tree. Each backup includes a manifest with file counts, byte counts, and SHA-256 checksums.
+
+## Wiki To Fundus Migration
+
+Inspect the migration plan without writing:
+
+```bash
+python dist/fundus/scripts/fundus.py migrate wiki-to-fundus --dry-run
+```
+
+Apply the migration through a backup and staged destination:
+
+```bash
+python dist/fundus/scripts/fundus.py migrate wiki-to-fundus --apply
+```
+
+Verify the canonical `Fundus/` corpus:
+
+```bash
+python dist/fundus/scripts/fundus.py migrate wiki-to-fundus --verify
+```
+
+By default, apply renames the old `Wiki/` tree to a timestamped `Wiki.migrated-*` path after successful verification so `Wiki/` and `Fundus/` do not remain parallel live sources. Use `--retire-source keep` only for an explicit temporary transition.
 
 ## Codex Permissions
 
@@ -298,7 +361,7 @@ Run:
 task verify
 ```
 
-This builds the package, checks the CLI and MCP script entrypoints, and runs the unit tests.
+This builds the direct skill package, plugin package, and local marketplace; checks the CLI and MCP entrypoints; validates the plugin manifest when the local validator is available; and runs the unit tests.
 
 After installing, verify the Codex install with:
 

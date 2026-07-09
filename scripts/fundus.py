@@ -36,6 +36,9 @@ MAX_SCAN_RESULTS = 20
 ARCHIVE_DIRNAME = "_archive"
 BACKUP_DIRNAME = ".fundus-backups"
 BACKUP_MANIFEST_FILENAME = "manifest.json"
+MIGRATION_STAGING_DIRNAME = ".fundus-migration-staging"
+DEFAULT_LEGACY_SOURCE_DIR = "Wiki"
+RESERVED_FILENAMES = {"index.md", "log.md"}
 RESERVED_FUNDUS_DIRNAMES = {ARCHIVE_DIRNAME, BACKUP_DIRNAME}
 ARCHIVE_DURABLE_TAGS = {"project-overview", "architecture", "runbook", "glossary"}
 ARCHIVE_BOOST_TAGS = {"ticket", "review", "investigation", "refinement"}
@@ -290,6 +293,10 @@ def backup_root_dir(config: Config) -> Path:
     return ensure_within(config.vault_path, config.vault_path / BACKUP_DIRNAME)
 
 
+def migration_staging_root_dir(config: Config) -> Path:
+    return ensure_within(config.vault_path, config.vault_path / MIGRATION_STAGING_DIRNAME)
+
+
 def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     if not text.startswith("---\n"):
         return {}, text
@@ -453,8 +460,8 @@ def backup_id_for(label: str | None, timestamp: datetime | None = None) -> str:
     return f"{created.strftime('%Y%m%dT%H%M%S%z')}-{suffix}"
 
 
-def iter_backup_source_files(config: Config) -> list[Path]:
-    root = fundus_root_dir(config)
+def iter_backup_source_files(config: Config, root: Path | None = None) -> list[Path]:
+    root = ensure_within(config.vault_path, root or fundus_root_dir(config))
     if not root.exists():
         raise FundusError(f"Fundus root does not exist: {root}")
     files: list[Path] = []
@@ -468,29 +475,30 @@ def iter_backup_source_files(config: Config) -> list[Path]:
     return sorted(files)
 
 
-def create_backup(config: Config, label: str | None = None) -> dict[str, Any]:
+def create_backup_for_root(config: Config, source_root: Path, source_dir_name: str, label: str | None = None) -> dict[str, Any]:
     created_at = datetime.now().astimezone()
     backup_id = backup_id_for(label, created_at)
-    root = fundus_root_dir(config)
+    root = ensure_within(config.vault_path, source_root)
     backup_root = backup_root_dir(config)
     destination_root = ensure_within(config.vault_path, backup_root / backup_id)
     if destination_root.exists():
         raise FundusError(f"Backup already exists: {backup_id}")
 
-    files = iter_backup_source_files(config)
+    files = iter_backup_source_files(config, root)
     copied_files: list[dict[str, Any]] = []
     total_bytes = 0
 
     for source_path in files:
         relative_path = source_path.relative_to(root)
-        destination_path = ensure_within(config.vault_path, destination_root / config.fundus_dir / relative_path)
+        destination_path = ensure_within(config.vault_path, destination_root / source_dir_name / relative_path)
         destination_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, destination_path)
         size = source_path.stat().st_size
         total_bytes += size
         copied_files.append(
             {
-                "path": str((Path(config.fundus_dir) / relative_path).as_posix()),
+                "path": str((Path(source_dir_name) / relative_path).as_posix()),
+                "source_path": str((Path(source_dir_name) / relative_path).as_posix()),
                 "size": size,
                 "sha256": file_sha256(source_path),
             }
@@ -501,7 +509,7 @@ def create_backup(config: Config, label: str | None = None) -> dict[str, Any]:
         "label": label or "backup",
         "created": created_at.isoformat(),
         "source_vault_path": str(config.vault_path),
-        "source_fundus_dir": config.fundus_dir,
+        "source_fundus_dir": source_dir_name,
         "source_fundus_path": str(root),
         "backup_path": str(destination_root),
         "file_count": len(copied_files),
@@ -510,6 +518,10 @@ def create_backup(config: Config, label: str | None = None) -> dict[str, Any]:
     }
     atomic_write(destination_root / BACKUP_MANIFEST_FILENAME, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return manifest
+
+
+def create_backup(config: Config, label: str | None = None) -> dict[str, Any]:
+    return create_backup_for_root(config, fundus_root_dir(config), config.fundus_dir, label)
 
 
 def list_backups(config: Config) -> list[dict[str, Any]]:
@@ -612,7 +624,7 @@ def active_fundus_relative_path_for_document(config: Config, doc: Document) -> s
         try:
             original = resolve_doc_path(config, original_path)
             return fundus_relative_path(config, original)
-        except FundusError:
+        except (FundusError, ValueError):
             pass
     parts = list(fundus_relative_parts_from_vault_path(config, doc.path))
     if parts and parts[0] == ARCHIVE_DIRNAME:
@@ -626,9 +638,14 @@ def scope_metadata_for_document(config: Config, doc: Document) -> dict[str, Any]
     active_relative = active_fundus_relative_path_for_document(config, doc)
     parent_path = str(Path(active_relative).parent).replace(".", "")
 
-    if explicit_scope == "area" or explicit_scope_path:
+    if explicit_scope == "area":
         scope_path = explicit_scope_path or parent_path
         return {"scope": "area", "scope_path": scope_path, "area": scope_path}
+    if explicit_scope == "project":
+        scope_path = explicit_scope_path or doc.project or parent_path
+        return {"scope": "project", "scope_path": scope_path, "area": None}
+    if explicit_scope_path:
+        return {"scope": "area", "scope_path": explicit_scope_path, "area": explicit_scope_path}
     if doc.project:
         return {"scope": "project", "scope_path": doc.project, "area": None}
     if parent_path:
@@ -636,8 +653,47 @@ def scope_metadata_for_document(config: Config, doc: Document) -> dict[str, Any]
     return {"scope": "area", "scope_path": "", "area": ""}
 
 
+def frontmatter_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def confidence_for_score(score: int) -> str:
+    if score >= 80:
+        return "high"
+    if score >= 30:
+        return "medium"
+    return "low"
+
+
 def index_entry_for_document(config: Config, doc: Document) -> dict[str, Any]:
-    source_text = " ".join([doc.relative_path, doc.title, *doc.tags, *extract_headings(doc.body), doc.body])
+    aliases = frontmatter_list(doc.frontmatter.get("aliases"))
+    resource = str(doc.frontmatter.get("resource") or "").strip()
+    optional_metadata_text = " ".join(
+        [
+            *aliases,
+            resource,
+            str(doc.frontmatter.get("status") or ""),
+            str(doc.frontmatter.get("owner") or ""),
+            str(doc.frontmatter.get("last_verified") or ""),
+            " ".join(frontmatter_list(doc.frontmatter.get("projects"))),
+            " ".join(frontmatter_list(doc.frontmatter.get("repos"))),
+        ]
+    )
+    source_text = " ".join(
+        [
+            doc.relative_path,
+            doc.title,
+            *doc.tags,
+            *extract_headings(doc.body),
+            optional_metadata_text,
+            doc.body,
+        ]
+    )
     archived = frontmatter_bool(doc.frontmatter.get("archived")) or f"/{ARCHIVE_DIRNAME}/" in f"/{doc.relative_path}"
     scope_metadata = scope_metadata_for_document(config, doc)
     return {
@@ -646,6 +702,14 @@ def index_entry_for_document(config: Config, doc: Document) -> dict[str, Any]:
         **scope_metadata,
         "title": doc.title,
         "tags": doc.tags,
+        "description": doc.frontmatter.get("description"),
+        "aliases": aliases,
+        "resource": resource or None,
+        "status": doc.frontmatter.get("status"),
+        "owner": doc.frontmatter.get("owner"),
+        "last_verified": doc.frontmatter.get("last_verified"),
+        "projects": frontmatter_list(doc.frontmatter.get("projects")),
+        "repos": frontmatter_list(doc.frontmatter.get("repos")),
         "updated": doc.updated,
         "headings": extract_headings(doc.body)[:20],
         "excerpt": make_excerpt(doc.body),
@@ -724,6 +788,9 @@ def score_index_entry(entry: dict[str, Any], query: str | None) -> tuple[int, st
     score = 0
     reasons: list[str] = []
     title_tokens = set(tokenize(str(entry.get("title", ""))))
+    alias_tokens = set(tokenize(" ".join(entry.get("aliases") or [])))
+    resource_tokens = set(tokenize(str(entry.get("resource") or "")))
+    description_tokens = set(tokenize(str(entry.get("description") or "")))
     tag_tokens = set(tokenize(" ".join(entry.get("tags") or [])))
     filename_tokens = set(tokenize(str(entry.get("path", "")).rsplit("/", 1)[-1]))
     heading_tokens = set(tokenize(" ".join(entry.get("headings") or [])))
@@ -739,6 +806,15 @@ def score_index_entry(entry: dict[str, Any], query: str | None) -> tuple[int, st
         if term in title_tokens:
             score += 20
             reasons.append("title")
+        elif term in alias_tokens:
+            score += 18
+            reasons.append("alias")
+        elif term in resource_tokens:
+            score += 16
+            reasons.append("resource")
+        elif term in description_tokens:
+            score += 15
+            reasons.append("description")
         elif term in tag_tokens:
             score += 14
             reasons.append("tag")
@@ -776,12 +852,19 @@ def present_index_entry(entry: dict[str, Any], score: int | None = None, reason:
         payload["scope_path"] = entry.get("scope_path")
     if entry.get("area"):
         payload["area"] = entry.get("area")
+    if entry.get("aliases"):
+        payload["aliases"] = entry.get("aliases")
+    if entry.get("resource"):
+        payload["resource"] = entry.get("resource")
+    if entry.get("last_verified"):
+        payload["last_verified"] = entry.get("last_verified")
     if entry.get("archived"):
         payload["archived"] = True
         payload["original_path"] = entry.get("original_path")
         payload["archived_at"] = entry.get("archived_at")
     if score is not None:
         payload["score"] = score
+        payload["confidence"] = confidence_for_score(score)
     if reason:
         payload["reason"] = reason
     if include_snippet:
@@ -896,6 +979,11 @@ def frontmatter_for_new_document(
     doc_type: str | None = None,
     description: str | None = None,
     document_id: str | None = None,
+    aliases: list[str] | None = None,
+    resource: str | None = None,
+    status: str | None = None,
+    owner: str | None = None,
+    last_verified: str | None = None,
 ) -> dict[str, Any]:
     timestamp = now_iso()
     frontmatter: dict[str, Any] = {
@@ -912,6 +1000,17 @@ def frontmatter_for_new_document(
     }
     if scope.kind == "project":
         frontmatter["project"] = project_name
+    clean_aliases = [alias.strip() for alias in aliases or [] if alias.strip()]
+    if clean_aliases:
+        frontmatter["aliases"] = clean_aliases
+    if resource and resource.strip():
+        frontmatter["resource"] = resource.strip()
+    if status and status.strip():
+        frontmatter["status"] = status.strip()
+    if owner and owner.strip():
+        frontmatter["owner"] = owner.strip()
+    if last_verified and last_verified.strip():
+        frontmatter["last_verified"] = last_verified.strip()
     return frontmatter
 
 
@@ -925,6 +1024,11 @@ def create_document(
     doc_type: str | None = None,
     description: str | None = None,
     document_id: str | None = None,
+    aliases: list[str] | None = None,
+    resource: str | None = None,
+    status: str | None = None,
+    owner: str | None = None,
+    last_verified: str | None = None,
 ) -> dict[str, Any]:
     active_scope = scope or project_scope(project_name)
     project_dir = fundus_scope_dir(config, active_scope)
@@ -942,6 +1046,11 @@ def create_document(
         doc_type,
         description,
         document_id,
+        aliases,
+        resource,
+        status,
+        owner,
+        last_verified,
     )
     content = render_document(frontmatter, redact_secrets(body, config))
     atomic_write(path, content)
@@ -953,6 +1062,7 @@ def create_document(
         "updated": frontmatter["updated"],
         "scope": active_scope.kind,
         "scope_path": active_scope.path,
+        "warnings": [],
     }
 
 
@@ -1094,6 +1204,11 @@ def add_frontmatter_to_document(
     doc_type: str | None = None,
     description: str | None = None,
     document_id: str | None = None,
+    aliases: list[str] | None = None,
+    resource: str | None = None,
+    status: str | None = None,
+    owner: str | None = None,
+    last_verified: str | None = None,
 ) -> dict[str, Any]:
     path = resolve_doc_path(config, path_arg)
     if not path.exists():
@@ -1116,6 +1231,11 @@ def add_frontmatter_to_document(
         doc_type,
         description,
         document_id,
+        aliases,
+        resource,
+        status,
+        owner,
+        last_verified,
     )
     frontmatter["created"] = timestamp
     frontmatter["updated"] = timestamp
@@ -1763,6 +1883,415 @@ def index_status(config: Config) -> dict[str, Any]:
     }
 
 
+def resolve_corpus_dir(config: Config, corpus_dir: str) -> Path:
+    raw = corpus_dir.strip().strip("/")
+    if not raw:
+        raise FundusError("Corpus directory must not be empty.")
+    path = Path(raw)
+    if path.is_absolute() or any(part in {".", ".."} for part in path.parts):
+        raise FundusError("Corpus directory must be a safe path relative to the vault root.")
+    return ensure_within(config.vault_path, config.vault_path / path)
+
+
+def config_with_fundus_dir(config: Config, fundus_dir: str) -> Config:
+    return Config(
+        vault_path=config.vault_path,
+        fundus_dir=fundus_dir.strip("/"),
+        default_tags=config.default_tags,
+        redaction_enabled=config.redaction_enabled,
+        redaction_patterns=config.redaction_patterns,
+    )
+
+
+def archive_relative_parts(parts: tuple[str, ...]) -> tuple[str, ...]:
+    if ARCHIVE_DIRNAME in parts:
+        archive_index = parts.index(ARCHIVE_DIRNAME)
+        remaining = parts[archive_index + 1 :]
+        return remaining or parts[-1:]
+    return parts
+
+
+def migration_destination_relative_path(relative_path: Path, frontmatter: dict[str, Any]) -> tuple[Path, bool, bool]:
+    parts = relative_path.parts
+    archived = frontmatter_bool(frontmatter.get("archived")) or ARCHIVE_DIRNAME in parts
+    if archived:
+        return Path(ARCHIVE_DIRNAME, *archive_relative_parts(parts)), True, False
+    reserved = relative_path.name in RESERVED_FILENAMES
+    return relative_path, False, reserved
+
+
+def migration_plan(
+    config: Config,
+    source_dir: str = DEFAULT_LEGACY_SOURCE_DIR,
+    destination_dir: str | None = None,
+) -> dict[str, Any]:
+    source_root = resolve_corpus_dir(config, source_dir)
+    target_dir = destination_dir or config.fundus_dir
+    destination_root = resolve_corpus_dir(config, target_dir)
+    if not source_root.exists():
+        raise FundusError(f"Migration source does not exist: {source_root}")
+
+    documents: list[dict[str, Any]] = []
+    destination_paths: set[str] = set()
+    duplicate_destinations: set[str] = set()
+    counts = {
+        "markdown": 0,
+        "active": 0,
+        "archive": 0,
+        "reserved": 0,
+        "concept": 0,
+        "missing_frontmatter": 0,
+        "reserved_with_frontmatter": 0,
+    }
+
+    for source_path in sorted(source_root.rglob("*.md")):
+        relative_path = source_path.relative_to(source_root)
+        frontmatter, _ = parse_frontmatter(source_path.read_text())
+        target_relative, archived, reserved = migration_destination_relative_path(relative_path, frontmatter)
+        destination_path = str((Path(target_dir) / target_relative).as_posix())
+        if destination_path in destination_paths:
+            duplicate_destinations.add(destination_path)
+        destination_paths.add(destination_path)
+
+        counts["markdown"] += 1
+        if archived:
+            counts["archive"] += 1
+        else:
+            counts["active"] += 1
+        if reserved:
+            counts["reserved"] += 1
+            if frontmatter:
+                counts["reserved_with_frontmatter"] += 1
+        elif not archived:
+            counts["concept"] += 1
+            if not frontmatter:
+                counts["missing_frontmatter"] += 1
+
+        documents.append(
+            {
+                "source": str((Path(source_dir) / relative_path).as_posix()),
+                "destination": destination_path,
+                "archived": archived,
+                "reserved": reserved,
+                "has_frontmatter": bool(frontmatter),
+            }
+        )
+
+    conflicts: list[dict[str, Any]] = []
+    if destination_root.exists() and any(destination_root.iterdir()):
+        conflicts.append({"path": str(destination_root), "reason": "destination_exists"})
+    for destination in sorted(duplicate_destinations):
+        conflicts.append({"path": destination, "reason": "duplicate_destination"})
+
+    return {
+        "source_dir": source_dir,
+        "destination_dir": target_dir,
+        "source_path": str(source_root),
+        "destination_path": str(destination_root),
+        "counts": counts,
+        "conflicts": conflicts,
+        "conflict_count": len(conflicts),
+        "documents": documents,
+    }
+
+
+def render_reserved_without_frontmatter(text: str) -> str:
+    frontmatter, body = parse_frontmatter(text)
+    if frontmatter:
+        return body if body.endswith("\n") else f"{body}\n"
+    return text
+
+
+def copy_migrated_document(
+    source_path: Path,
+    destination_path: Path,
+    staging_config: Config,
+    archived: bool,
+    reserved: bool,
+    canonical_destination: str,
+) -> None:
+    text = source_path.read_text()
+    if reserved:
+        atomic_write(destination_path, render_reserved_without_frontmatter(text))
+        return
+
+    if archived:
+        frontmatter, body = parse_frontmatter(text)
+        original_path = archive_original_path_for_destination(canonical_destination)
+        if frontmatter and original_path:
+            frontmatter["original_path"] = original_path
+            atomic_write(destination_path, render_frontmatter_body(frontmatter, body))
+            return
+
+    atomic_write(destination_path, text)
+    if not archived:
+        normalize_frontmatter_for_path(
+            staging_config,
+            destination_path,
+            apply=True,
+            add_missing=True,
+        )
+
+
+def render_frontmatter_body(frontmatter: dict[str, Any], body: str) -> str:
+    return f"{format_frontmatter(frontmatter)}\n\n{body.lstrip()}"
+
+
+def archive_original_path_for_destination(destination: str) -> str | None:
+    parts = Path(destination).parts
+    if len(parts) >= 3 and parts[1] == ARCHIVE_DIRNAME:
+        return Path(parts[0], *parts[2:]).as_posix()
+    return None
+
+
+def repair_archive_original_paths(config: Config, target_dir: str) -> list[str]:
+    repair_config = config_with_fundus_dir(config, target_dir)
+    root = fundus_root_dir(repair_config)
+    archive_root = root / ARCHIVE_DIRNAME
+    if not archive_root.exists():
+        return []
+
+    repaired: list[str] = []
+    for path in sorted(archive_root.rglob("*.md")):
+        frontmatter, body = parse_frontmatter(path.read_text())
+        if not frontmatter:
+            continue
+        relative_to_root = path.relative_to(root).as_posix()
+        original_path = archive_original_path_for_destination(f"{target_dir}/{relative_to_root}")
+        if not original_path or frontmatter.get("original_path") == original_path:
+            continue
+        frontmatter["original_path"] = original_path
+        atomic_write(path, render_frontmatter_body(frontmatter, body))
+        repaired.append(str(path.relative_to(repair_config.vault_path)))
+    return repaired
+
+
+def retire_migration_source(config: Config, source_dir: str, migration_id: str) -> str:
+    source_root = resolve_corpus_dir(config, source_dir)
+    retired = ensure_within(config.vault_path, config.vault_path / f"{source_dir}.migrated-{migration_id}")
+    if retired.exists():
+        raise FundusError(f"Retired source path already exists: {retired}")
+    source_root.rename(retired)
+    return str(retired)
+
+
+def verify_fundus_corpus(config: Config, destination_dir: str | None = None) -> dict[str, Any]:
+    target_dir = destination_dir or config.fundus_dir
+    verify_config = config_with_fundus_dir(config, target_dir)
+    root = fundus_root_dir(verify_config)
+    issues: list[dict[str, Any]] = []
+    counts = {
+        "markdown": 0,
+        "active": 0,
+        "archive": 0,
+        "reserved": 0,
+        "concept": 0,
+    }
+
+    if not root.exists():
+        return {
+            "destination_dir": target_dir,
+            "destination_path": str(root),
+            "passed": False,
+            "counts": counts,
+            "issues": [{"path": str(root), "reason": "destination_missing"}],
+            "index": index_status(verify_config),
+            "smoke_tests": [],
+        }
+
+    for path in sorted(root.rglob("*.md")):
+        relative_parts = path.relative_to(root).parts
+        if BACKUP_DIRNAME in relative_parts:
+            continue
+        archived = relative_parts and relative_parts[0] == ARCHIVE_DIRNAME
+        reserved = not archived and path.name in RESERVED_FILENAMES
+        frontmatter, _ = parse_frontmatter(path.read_text())
+        relative_path = str(path.relative_to(verify_config.vault_path))
+
+        counts["markdown"] += 1
+        counts["archive" if archived else "active"] += 1
+        if reserved:
+            counts["reserved"] += 1
+            if frontmatter:
+                issues.append({"path": relative_path, "reason": "reserved_has_frontmatter"})
+            continue
+        if not archived:
+            counts["concept"] += 1
+            if not frontmatter:
+                issues.append({"path": relative_path, "reason": "concept_missing_frontmatter"})
+            elif not str(frontmatter.get("type") or "").strip():
+                issues.append({"path": relative_path, "reason": "concept_missing_type"})
+
+    smoke_specs = [
+        ("project", "prompting-service", "prompting-service", project_scope("prompting-service"), False),
+        ("ticket", "BACKEND-2291", "prompting-service", project_scope("prompting-service"), False),
+        ("epic", "AI Agent Templates", "AI Agent Templates", area_scope("Epics/AI Agent Templates"), False),
+        ("domain", "Prompt Authoring", "Prompt Authoring", area_scope("Domains/Prompt Authoring"), False),
+        ("archive", "archive", "AI Agent Templates", area_scope("Epics/AI Agent Templates"), True),
+    ]
+    smoke_tests: list[dict[str, Any]] = []
+    for name, query, label, scope, include_archived in smoke_specs:
+        selected_scope = scope or project_scope(label)
+        results = scan_documents(
+            verify_config,
+            label,
+            query,
+            limit=3,
+            include_archived=include_archived,
+            scope=selected_scope,
+        )
+        smoke_tests.append(
+            {
+                "name": name,
+                "query": query,
+                "scope": selected_scope.kind,
+                "scope_path": selected_scope.path,
+                "include_archived": include_archived,
+                "found": bool(results),
+                "result_count": len(results),
+                "paths": [result.get("path") for result in results],
+            }
+        )
+
+    return {
+        "destination_dir": target_dir,
+        "destination_path": str(root),
+        "passed": not issues,
+        "counts": counts,
+        "issues": issues,
+        "index": index_status(verify_config),
+        "smoke_tests": smoke_tests,
+    }
+
+
+def apply_wiki_to_fundus_migration(
+    config: Config,
+    source_dir: str = DEFAULT_LEGACY_SOURCE_DIR,
+    destination_dir: str | None = None,
+    retire_source: str = "rename",
+    backup_label: str | None = None,
+) -> dict[str, Any]:
+    target_dir = destination_dir or config.fundus_dir
+    if retire_source not in {"rename", "keep"}:
+        raise FundusError("--retire-source must be 'rename' or 'keep'.")
+    plan = migration_plan(config, source_dir, target_dir)
+    destination_conflicts = [conflict for conflict in plan["conflicts"] if conflict.get("reason") == "destination_exists"]
+    other_conflicts = [conflict for conflict in plan["conflicts"] if conflict.get("reason") != "destination_exists"]
+    if destination_conflicts and not other_conflicts:
+        migration_id = backup_id_for("wiki-to-fundus-resume")
+        repaired_archive_original_paths = repair_archive_original_paths(config, target_dir)
+        index_payload = rebuild_index(config_with_fundus_dir(config, target_dir))
+        final_verification = verify_fundus_corpus(config, target_dir)
+        if not final_verification["passed"]:
+            raise FundusError(f"Existing destination verification failed: {final_verification['issues']}")
+        backup = create_backup_for_root(
+            config,
+            resolve_corpus_dir(config, source_dir),
+            source_dir,
+            backup_label or f"pre-{slugify(source_dir)}-to-{slugify(target_dir)}-resume",
+        )
+        retired_path = None
+        if retire_source == "rename":
+            retired_path = retire_migration_source(config, source_dir, migration_id)
+        return {
+            "migration_id": migration_id,
+            "source_dir": source_dir,
+            "destination_dir": target_dir,
+            "resumed_existing_destination": True,
+            "backup": {
+                "id": backup["id"],
+                "backup_path": backup["backup_path"],
+                "file_count": backup["file_count"],
+                "byte_count": backup["byte_count"],
+            },
+            "copied_count": 0,
+            "copied_documents": [],
+            "repaired_archive_original_paths": repaired_archive_original_paths[:50],
+            "index": {
+                "path": str(index_path(config_with_fundus_dir(config, target_dir)).relative_to(config.vault_path)),
+                "documents": len(index_payload["documents"]),
+            },
+            "verification": final_verification,
+            "retire_source": retire_source,
+            "retired_source_path": retired_path,
+        }
+    if plan["conflicts"]:
+        raise FundusError(f"Migration has conflicts: {plan['conflicts']}")
+    source_root = resolve_corpus_dir(config, source_dir)
+    destination_root = resolve_corpus_dir(config, target_dir)
+    migration_id = backup_id_for("wiki-to-fundus")
+    backup = create_backup_for_root(
+        config,
+        source_root,
+        source_dir,
+        backup_label or f"pre-{slugify(source_dir)}-to-{slugify(target_dir)}",
+    )
+    staging_root = ensure_within(config.vault_path, migration_staging_root_dir(config) / migration_id)
+    staging_destination = ensure_within(config.vault_path, staging_root / target_dir)
+    if staging_root.exists():
+        raise FundusError(f"Migration staging directory already exists: {staging_root}")
+    staging_config = config_with_fundus_dir(config, str(staging_destination.relative_to(config.vault_path)))
+
+    copied_documents: list[str] = []
+    for document in plan["documents"]:
+        source_relative = Path(document["source"]).relative_to(source_dir)
+        destination_relative = Path(document["destination"]).relative_to(target_dir)
+        source_path = ensure_within(config.vault_path, source_root / source_relative)
+        destination_path = ensure_within(config.vault_path, staging_destination / destination_relative)
+        copy_migrated_document(
+            source_path,
+            destination_path,
+            staging_config,
+            bool(document["archived"]),
+            bool(document["reserved"]),
+            document["destination"],
+        )
+        copied_documents.append(str((Path(target_dir) / destination_relative).as_posix()))
+
+    staging_verification = verify_fundus_corpus(config, str(staging_destination.relative_to(config.vault_path)))
+    if not staging_verification["passed"]:
+        raise FundusError(f"Staged migration verification failed: {staging_verification['issues']}")
+
+    destination_root.parent.mkdir(parents=True, exist_ok=True)
+    if destination_root.exists():
+        destination_root.rmdir()
+    shutil.move(str(staging_destination), str(destination_root))
+    cleanup_empty_directories(config_with_fundus_dir(config, str(migration_staging_root_dir(config).relative_to(config.vault_path))), "", global_scope=True)
+
+    repaired_archive_original_paths = repair_archive_original_paths(config, target_dir)
+    index_payload = rebuild_index(config_with_fundus_dir(config, target_dir))
+    final_verification = verify_fundus_corpus(config, target_dir)
+    if not final_verification["passed"]:
+        raise FundusError(f"Final migration verification failed: {final_verification['issues']}")
+
+    retired_path = None
+    if retire_source == "rename":
+        retired_path = retire_migration_source(config, source_dir, migration_id)
+
+    return {
+        "migration_id": migration_id,
+        "source_dir": source_dir,
+        "destination_dir": target_dir,
+        "backup": {
+            "id": backup["id"],
+            "backup_path": backup["backup_path"],
+            "file_count": backup["file_count"],
+            "byte_count": backup["byte_count"],
+        },
+        "copied_count": len(copied_documents),
+        "copied_documents": copied_documents[:50],
+        "repaired_archive_original_paths": repaired_archive_original_paths[:50],
+        "index": {
+            "path": str(index_path(config_with_fundus_dir(config, target_dir)).relative_to(config.vault_path)),
+            "documents": len(index_payload["documents"]),
+            "generated": index_payload["generated"],
+        },
+        "verification": final_verification,
+        "retire_source": retire_source,
+        "retired_source_path": retired_path,
+    }
+
+
 def doctor_report(config: Config, project_root: Path, project_name: str) -> dict[str, Any]:
     return doctor_report_for_scope(config, project_root, project_name, project_scope(project_name))
 
@@ -1818,6 +2347,11 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--type", dest="doc_type", help="OKF-compatible document type. Default: Note.")
     create_parser.add_argument("--description", help="Short document description. Defaults to the title.")
     create_parser.add_argument("--id", dest="document_id", help="Stable document id. Defaults to a scope/title-derived id.")
+    create_parser.add_argument("--alias", action="append", dest="aliases", help="Alias or ticket id to store in frontmatter. May be repeated.")
+    create_parser.add_argument("--resource", help="External source URL or resource identifier.")
+    create_parser.add_argument("--status", help="Optional note status such as active or stale.")
+    create_parser.add_argument("--owner", help="Optional note owner.")
+    create_parser.add_argument("--last-verified", help="Date or timestamp for the last source verification.")
     create_parser.add_argument("--content", help="Inline markdown content.")
     create_parser.add_argument("--content-file", help="Path to a markdown file containing the body content.")
     create_parser.add_argument("--tag", action="append", dest="tags", help="Additional tag to add.")
@@ -1837,6 +2371,11 @@ def build_parser() -> argparse.ArgumentParser:
     frontmatter_parser.add_argument("--type", dest="doc_type", help="OKF-compatible document type. Default: Note.")
     frontmatter_parser.add_argument("--description", help="Short document description. Defaults to the title.")
     frontmatter_parser.add_argument("--id", dest="document_id", help="Stable document id. Defaults to a scope/title-derived id.")
+    frontmatter_parser.add_argument("--alias", action="append", dest="aliases", help="Alias or ticket id to store in frontmatter. May be repeated.")
+    frontmatter_parser.add_argument("--resource", help="External source URL or resource identifier.")
+    frontmatter_parser.add_argument("--status", help="Optional note status such as active or stale.")
+    frontmatter_parser.add_argument("--owner", help="Optional note owner.")
+    frontmatter_parser.add_argument("--last-verified", help="Date or timestamp for the last source verification.")
     frontmatter_parser.add_argument("--tag", action="append", dest="tags", help="Additional tag to add.")
 
     normalize_frontmatter_parser = subparsers.add_parser(
@@ -1875,6 +2414,17 @@ def build_parser() -> argparse.ArgumentParser:
     index_subparsers = index_parser.add_subparsers(dest="index_command", required=True)
     index_subparsers.add_parser("rebuild", help="Rebuild the Fundus search index from Markdown documents.")
     index_subparsers.add_parser("status", help="Report whether the Fundus search index exists and is fresh.")
+
+    migrate_parser = subparsers.add_parser("migrate", help="Run one-time Fundus corpus migrations.")
+    migrate_subparsers = migrate_parser.add_subparsers(dest="migration_command", required=True)
+    wiki_migration_parser = migrate_subparsers.add_parser("wiki-to-fundus", help="Migrate the legacy Wiki corpus into canonical Fundus.")
+    wiki_migration_parser.add_argument("--source-dir", default=DEFAULT_LEGACY_SOURCE_DIR, help=f"Legacy source directory under the vault. Default: {DEFAULT_LEGACY_SOURCE_DIR}.")
+    wiki_migration_parser.add_argument("--destination-dir", help="Destination corpus directory under the vault. Defaults to configured fundus_dir.")
+    wiki_migration_parser.add_argument("--dry-run", action="store_true", help="Report the migration plan without writing.")
+    wiki_migration_parser.add_argument("--apply", action="store_true", help="Apply the migration through a staged destination.")
+    wiki_migration_parser.add_argument("--verify", action="store_true", help="Verify the destination corpus structure.")
+    wiki_migration_parser.add_argument("--retire-source", choices=["rename", "keep"], default="rename", help="What to do with the legacy source after successful apply. Default: rename.")
+    wiki_migration_parser.add_argument("--backup-label", help="Backup label to use before applying the migration.")
 
     archive_parser = subparsers.add_parser("archive", help="Archive, restore, and inspect old Fundus notes.")
     archive_subparsers = archive_parser.add_subparsers(dest="archive_command", required=True)
@@ -1948,6 +2498,11 @@ def main() -> int:
                 args.doc_type,
                 args.description,
                 args.document_id,
+                args.aliases,
+                args.resource,
+                args.status,
+                args.owner,
+                args.last_verified,
             )
             print(json.dumps(payload, indent=2))
             return 0
@@ -1969,6 +2524,11 @@ def main() -> int:
                 args.doc_type,
                 args.description,
                 args.document_id,
+                args.aliases,
+                args.resource,
+                args.status,
+                args.owner,
+                args.last_verified,
             )
             print(json.dumps(payload, indent=2))
             return 0
@@ -2040,6 +2600,32 @@ def main() -> int:
             if args.index_command == "status":
                 print(json.dumps(index_status(config), indent=2))
                 return 0
+
+        if args.command == "migrate":
+            if args.migration_command == "wiki-to-fundus":
+                if sum(bool(flag) for flag in [args.dry_run, args.apply, args.verify]) != 1:
+                    raise FundusError("Choose exactly one of --dry-run, --apply, or --verify.")
+                destination_dir = args.destination_dir or config.fundus_dir
+                if args.dry_run:
+                    print(json.dumps(migration_plan(config, args.source_dir, destination_dir), indent=2))
+                    return 0
+                if args.verify:
+                    print(json.dumps(verify_fundus_corpus(config, destination_dir), indent=2))
+                    return 0
+                if args.apply:
+                    print(
+                        json.dumps(
+                            apply_wiki_to_fundus_migration(
+                                config,
+                                args.source_dir,
+                                destination_dir,
+                                args.retire_source,
+                                args.backup_label,
+                            ),
+                            indent=2,
+                        )
+                    )
+                    return 0
 
         if args.command == "archive":
             if args.archive_command == "candidates":

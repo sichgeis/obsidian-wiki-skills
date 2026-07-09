@@ -228,13 +228,13 @@ Plugin package:
 ```text
 fundus plugin
 ├── .codex-plugin/plugin.json
+├── .mcp.json
 ├── skills/fundus/SKILL.md
 ├── skills/fundus/agents/openai.yaml
-├── scripts/fundus.py
-├── scripts/fundus_mcp.py
-├── config.example.json
-├── requirements.txt
-└── docs/reference/*.md
+├── skills/fundus/scripts/fundus.py
+├── skills/fundus/scripts/fundus_mcp.py
+├── skills/fundus/requirements.txt  # no-dependency marker
+└── skills/fundus/docs/reference/*.md
 ```
 
 Runtime flow:

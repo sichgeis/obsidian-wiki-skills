@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -122,6 +123,32 @@ class IndexSearchTest(FundusTestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["title"], "LLM OCR Fallback Ticket")
         self.assertIn("ticket:BACKEND-2242", results[0]["reason"])
+
+    def test_scan_matches_alias_and_resource_metadata(self) -> None:
+        fundus.create_document(
+            self.config,
+            "demo",
+            "Prompt Authoring Boundary",
+            "## Context\n\nDurable context.",
+            ["domain"],
+            aliases=["BACKEND-2291", "Workbench Alias"],
+            resource="https://jira.example/browse/BACKEND-2291",
+            status="active",
+            owner="Christian",
+            last_verified="2026-07-09",
+        )
+        fundus.rebuild_index(self.config)
+
+        alias_results = fundus.scan_documents(self.config, "demo", "workbench alias")
+        resource_results = fundus.scan_documents(self.config, "demo", "jira example")
+
+        self.assertEqual(alias_results[0]["title"], "Prompt Authoring Boundary")
+        self.assertIn("alias", alias_results[0]["reason"])
+        self.assertEqual(alias_results[0]["confidence"], "medium")
+        self.assertEqual(alias_results[0]["aliases"], ["BACKEND-2291", "Workbench Alias"])
+        self.assertEqual(alias_results[0]["resource"], "https://jira.example/browse/BACKEND-2291")
+        self.assertEqual(alias_results[0]["last_verified"], "2026-07-09")
+        self.assertEqual(resource_results[0]["title"], "Prompt Authoring Boundary")
 
     def test_create_refreshes_existing_index_entry(self) -> None:
         fundus.rebuild_index(self.config)
@@ -771,6 +798,140 @@ class BackupTest(FundusTestCase):
         entry = next(file for file in manifest["files"] if file["path"] == result["path"])
         self.assertEqual(entry["sha256"], fundus.file_sha256(self.vault_path / result["path"]))
         self.assertFalse(any(fundus.BACKUP_DIRNAME in file["path"] for file in manifest["files"]))
+
+
+class MigrationTest(FundusTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        shutil.rmtree(self.vault_path / "Fundus")
+
+    def write_wiki_note(self, relative_path: str, text: str) -> Path:
+        path = self.vault_path / "Wiki" / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        return path
+
+    def write_legacy_project_note(self) -> None:
+        self.write_wiki_note(
+            "demo/legacy-ticket.md",
+            "\n".join(
+                [
+                    "---",
+                    "title: Legacy Ticket",
+                    "created: 2026-01-01T00:00:00+00:00",
+                    "updated: 2026-01-02T00:00:00+00:00",
+                    "project: old-demo",
+                    "tags:",
+                    "  - wiki",
+                    "  - project/old-demo",
+                    "  - ticket",
+                    "---",
+                    "",
+                    "# Legacy Ticket",
+                    "",
+                    "BACKEND-2291 durable context.",
+                    "",
+                ]
+            ),
+        )
+
+    def write_reserved_index(self) -> None:
+        self.write_wiki_note(
+            "demo/index.md",
+            "---\ntitle: Demo Index\ntype: Index\n---\n\n# Demo Index\n\nLinks.\n",
+        )
+
+    def write_archived_note(self) -> None:
+        self.write_wiki_note(
+            "_archive/demo/old-note.md",
+            f"---\ntitle: Old Note\narchived: true\noriginal_path: {self.vault_path}/Wiki/demo/old-note.md\n---\n\n# Old Note\n\nHistorical.\n",
+        )
+
+    def test_migration_plan_reports_counts_and_conflicts_without_writing(self) -> None:
+        self.write_legacy_project_note()
+        self.write_reserved_index()
+        self.write_archived_note()
+
+        plan = fundus.migration_plan(self.config)
+
+        self.assertEqual(plan["source_dir"], "Wiki")
+        self.assertEqual(plan["destination_dir"], "Fundus")
+        self.assertEqual(plan["counts"]["markdown"], 3)
+        self.assertEqual(plan["counts"]["active"], 2)
+        self.assertEqual(plan["counts"]["archive"], 1)
+        self.assertEqual(plan["counts"]["reserved"], 1)
+        self.assertEqual(plan["counts"]["concept"], 1)
+        self.assertEqual(plan["counts"]["reserved_with_frontmatter"], 1)
+        self.assertEqual(plan["conflict_count"], 0)
+        self.assertFalse((self.vault_path / "Fundus").exists())
+
+    def test_migration_apply_stages_transforms_verifies_indexes_and_retires_source(self) -> None:
+        self.write_legacy_project_note()
+        self.write_reserved_index()
+        self.write_archived_note()
+
+        result = fundus.apply_wiki_to_fundus_migration(self.config)
+
+        migrated_note = self.vault_path / "Fundus" / "demo" / "legacy-ticket.md"
+        migrated_index = self.vault_path / "Fundus" / "demo" / "index.md"
+        migrated_archive = self.vault_path / "Fundus" / "_archive" / "demo" / "old-note.md"
+        frontmatter, body = fundus.parse_frontmatter(migrated_note.read_text())
+        index_frontmatter, index_body = fundus.parse_frontmatter(migrated_index.read_text())
+        archive_frontmatter, archive_body = fundus.parse_frontmatter(migrated_archive.read_text())
+
+        self.assertTrue(result["verification"]["passed"])
+        self.assertEqual(result["copied_count"], 3)
+        self.assertEqual(result["index"]["documents"], 3)
+        self.assertTrue(Path(result["backup"]["backup_path"]).exists())
+        self.assertFalse((self.vault_path / "Wiki").exists())
+        self.assertTrue(Path(result["retired_source_path"]).exists())
+        self.assertEqual(frontmatter["type"], "Research")
+        self.assertEqual(frontmatter["scope"], "project")
+        self.assertEqual(frontmatter["scope_path"], "demo")
+        self.assertEqual(frontmatter["project"], "demo")
+        self.assertEqual(frontmatter["tags"], ["fundus", "project/demo", "ticket"])
+        self.assertIn("BACKEND-2291", body)
+        self.assertEqual(index_frontmatter, {})
+        self.assertEqual(index_body, "\n# Demo Index\n\nLinks.\n")
+        self.assertEqual(archive_frontmatter["title"], "Old Note")
+        self.assertEqual(archive_frontmatter["original_path"], "Fundus/demo/old-note.md")
+        self.assertNotIn("type", archive_frontmatter)
+        self.assertIn("Historical.", archive_body)
+        self.assertFalse(fundus.index_status(self.config)["stale"])
+
+    def test_migration_apply_can_keep_source_when_requested(self) -> None:
+        self.write_legacy_project_note()
+
+        result = fundus.apply_wiki_to_fundus_migration(self.config, retire_source="keep")
+
+        self.assertEqual(result["retire_source"], "keep")
+        self.assertIsNone(result["retired_source_path"])
+        self.assertTrue((self.vault_path / "Wiki").exists())
+
+    def test_migration_apply_resumes_existing_destination_and_retires_source(self) -> None:
+        self.write_legacy_project_note()
+        self.write_archived_note()
+        first = fundus.apply_wiki_to_fundus_migration(self.config, retire_source="keep")
+
+        resumed = fundus.apply_wiki_to_fundus_migration(self.config)
+
+        self.assertEqual(first["retire_source"], "keep")
+        self.assertTrue(resumed["resumed_existing_destination"])
+        self.assertEqual(resumed["copied_count"], 0)
+        self.assertFalse((self.vault_path / "Wiki").exists())
+        self.assertTrue(Path(resumed["retired_source_path"]).exists())
+        self.assertFalse(fundus.index_status(self.config)["stale"])
+
+    def test_verify_fundus_corpus_reports_reserved_frontmatter_issue(self) -> None:
+        (self.vault_path / "Fundus" / "demo").mkdir(parents=True)
+        (self.vault_path / "Fundus" / "demo" / "index.md").write_text(
+            "---\ntitle: Bad Index\n---\n\n# Bad Index\n"
+        )
+
+        verification = fundus.verify_fundus_corpus(self.config)
+
+        self.assertFalse(verification["passed"])
+        self.assertEqual(verification["issues"][0]["reason"], "reserved_has_frontmatter")
 
 
 class ScopeAndAreaTest(FundusTestCase):
