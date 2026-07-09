@@ -257,6 +257,7 @@ MCP unavailable
   -> skill uses installed helper directly
   -> read-only commands run normally
   -> write-like commands use explicit sandbox escalation when vault is outside workspace
+  -> if the helper is unavailable too, Codex reports Fundus writes as blocked instead of editing Markdown directly
 ```
 
 ## Source References

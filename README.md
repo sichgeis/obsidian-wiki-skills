@@ -237,6 +237,8 @@ By default, apply renames the old `Wiki/` tree to a timestamped `Wiki.migrated-*
 
 In normal Codex use, prefer the plugin-provided `fundus` MCP tools. The plugin owns the MCP server registration, so no manual `~/.codex/config.toml` MCP entry is needed.
 
+Fundus does not depend on a separate Obsidian MCP. If the `fundus` MCP tools are not visible in a Codex thread, use the Fundus CLI helper as the fallback. Do not use generic Obsidian tools or direct Markdown edits for Fundus writes.
+
 Codex has two separate gates:
 
 - Command approval: whether the proposed command is trusted.
@@ -251,6 +253,8 @@ If MCP tools are unavailable and Codex must use the CLI helper, run the helper f
 ```
 
 Do not use the old direct-skill path `~/.codex/skills/fundus/scripts/fundus.py` unless you intentionally installed the legacy direct skill with `task install:codex`.
+
+If neither the `fundus` MCP tools nor the Fundus CLI helper are available, stop and report that Fundus writes are blocked. Do not create, update, or rewrite vault Markdown directly as a fallback.
 
 Codex approvals are command-prefix based, not skill-name based. The interpreter token is part of that prefix: a rule for `python .../fundus.py` does not match `python3 .../fundus.py`. If you choose to allowlist direct CLI usage, allowlist the exact helper path and interpreter that Codex will run. After a plugin cache-bust reinstall, the versioned installed path may change, so the MCP tools are the steadier day-to-day interface.
 

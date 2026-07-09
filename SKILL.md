@@ -32,6 +32,7 @@ Do not use Fundus when the user opts out, when the content is casual/non-work kn
 ## Retrieval
 
 - Prefer the `fundus` MCP server when available; otherwise use `scripts/fundus.py`.
+- Fundus does not depend on a separate Obsidian MCP. Do not describe missing Fundus tools as "the Obsidian MCP was not configured."
 - Start with `scan`; read only the best active match when confidence is good.
 - If confidence is uncertain and the task matters, inspect a bounded number of additional plausible matches automatically.
 - Normal retrieval excludes archived notes. Include archives only when the user asks for archived, stale, historical, or recovery context.
@@ -39,7 +40,9 @@ Do not use Fundus when the user opts out, when the content is casual/non-work kn
 
 ## Writes
 
-- Never edit Fundus notes directly. Write only through MCP tools or `scripts/fundus.py`.
+- Never edit Fundus notes directly. Write only through Fundus MCP tools or `scripts/fundus.py`.
+- Do not use generic Obsidian tools, `apply_patch`, shell redirection, editor writes, or raw Markdown file edits for Fundus note writes.
+- If both Fundus MCP tools and `scripts/fundus.py` are unavailable, stop and tell the user Fundus writes are blocked. Do not create, update, or rewrite Markdown directly as a fallback.
 - Scan before creating. If a likely match exists, read it and update instead of creating a duplicate.
 - Use append or section replace for incremental additions.
 - Use rewrite only when old body content would remain misleading.
@@ -61,6 +64,7 @@ Do not use Fundus when the user opts out, when the content is casual/non-work kn
 - Read-only helper calls such as `scan`, `read`, `doctor`, `index status`, `archive candidates`, and migration `--dry-run` should not request write escalation.
 - Write-like calls such as `create`, `update`, `index rebuild`, `archive apply`, `archive restore`, `archive cleanup`, and migration `--apply` need escalated sandbox permissions when the vault is outside the writable workspace.
 - If MCP tools are unavailable and you must use the CLI helper, run `scripts/fundus.py` from the loaded skill package or from the repository build. Do not assume the legacy direct-skill path `~/.codex/skills/fundus`; plugin installs live under the versioned Codex plugin cache.
+- If you cannot locate the helper path, ask for help or report the blocked write. Never fall back to editing vault Markdown directly.
 - If the exact helper prefix is already allowlisted, do not pass a new `prefix_rule`; keep required escalation justifications terse.
 - For multiline Markdown, write a temporary file under `/private/tmp` and pass `--content-file`. Avoid shell wrappers, heredocs, redirection, command substitution, and inline multiline shell quoting.
 

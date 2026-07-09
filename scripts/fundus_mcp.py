@@ -532,7 +532,10 @@ class JsonRpcMcpServer:
                     "protocolVersion": protocol_version,
                     "capabilities": {"tools": {"listChanged": False}},
                     "serverInfo": {"name": self.name, "version": "0.1.0"},
-                    "instructions": "Use Fundus as brief, cited evidence for durable work knowledge; source code remains authoritative.",
+                    "instructions": (
+                        "Use Fundus as brief, cited evidence for durable work knowledge; source code remains authoritative. "
+                        "Write Fundus notes only through these tools or the Fundus CLI helper, never through raw Markdown or generic Obsidian edits."
+                    ),
                 },
             )
         if method == "ping":

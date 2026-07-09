@@ -310,6 +310,7 @@ class McpProtocolTest(McpFundusTestCase):
 
         self.assertEqual(initialized["result"]["serverInfo"]["name"], "fundus")
         self.assertIn("tools", initialized["result"]["capabilities"])
+        self.assertIn("never through raw Markdown", initialized["result"]["instructions"])
         self.assertIn("migrate_wiki_to_fundus", tools)
         self.assertEqual(tools["create_note"]["inputSchema"]["properties"]["aliases"]["type"], "array")
         self.assertEqual(tools["update_note"]["inputSchema"]["properties"]["mode"]["enum"], ["append", "replace", "rewrite"])

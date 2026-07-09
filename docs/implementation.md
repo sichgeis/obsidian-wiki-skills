@@ -132,7 +132,7 @@ The command runs relative to the installed plugin root. The process stays alive 
 
 ## Codex Approvals
 
-Codex should prefer the plugin-provided MCP tools for normal Fundus reads and writes. If MCP tools are unavailable and Codex must use the CLI helper directly, it should run the helper from the repository build or from the exact installed plugin cache path shown by `codex plugin add` / `codex plugin list`.
+Codex should prefer the plugin-provided MCP tools for normal Fundus reads and writes. Fundus does not depend on a separate Obsidian MCP, and generic Obsidian tools are not an acceptable write fallback for Fundus notes. If MCP tools are unavailable and Codex must use the CLI helper directly, it should run the helper from the repository build or from the exact installed plugin cache path shown by `codex plugin add` / `codex plugin list`.
 
 Plugin cache paths are versioned:
 
@@ -141,6 +141,8 @@ Plugin cache paths are versioned:
 ```
 
 The old direct-skill path `~/.codex/skills/fundus/scripts/fundus.py` is valid only when the legacy `task install:codex` target has intentionally been used.
+
+If neither the `fundus` MCP tools nor the CLI helper are available, Codex should stop and report that Fundus writes are blocked instead of creating, updating, or rewriting vault Markdown directly.
 
 Codex approvals are command-prefix based, not skill-name based. This repository cannot declare a semantic "allow all fundus skill calls" rule by itself. The interpreter token is part of the matched prefix, so `python .../fundus.py` and `python3 .../fundus.py` need separate rules. The command allowlist is also separate from filesystem sandboxing: the helper can be an approved command and still need escalated sandbox permissions when it writes to an Obsidian vault outside the active workspace.
 
