@@ -1,5 +1,9 @@
 # Implementation Notes
 
+## Document Role
+
+This document describes the current implementation. Use `docs/agent-implementation-tracker.md` for pass-by-pass planning, phase status, backlog tracking, and acceptance criteria. Use `docs/fundus-target-picture.md` for stable product decisions, corpus findings, OKF profile, and target architecture.
+
 ## Current Transition
 
 The current local knowledge corpus lives under `/Users/christian/vault/Hypatos/Wiki`, while the target canonical Fundus root is `/Users/christian/vault/Hypatos/Fundus`.

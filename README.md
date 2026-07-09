@@ -14,7 +14,7 @@ Fundus is being refined into Christian's personal Codex workbench for durable wo
 
 Fundus is evidence, not authority. Source code remains the source of truth for implemented behavior; Fundus helps discover business ideas, technical concepts, prior decisions, and discussion history. When Fundus appears stale, Codex should propose a concise correction instead of silently rewriting it, unless the user explicitly asks to propagate new learning into Fundus.
 
-The live legacy corpus currently exists under `/Users/christian/vault/Hypatos/Wiki`. The target canonical corpus is `/Users/christian/vault/Hypatos/Fundus`. The next major setup work is a verified one-time migration from `Wiki/` to `Fundus/`, including active notes, quiet archived-note preservation, strict reserved-file cleanup for `index.md` and `log.md`, and an index rebuild. See `docs/fundus-plugin-roadmap.md` for the full implementation roadmap.
+The live legacy corpus currently exists under `/Users/christian/vault/Hypatos/Wiki`. The target canonical corpus is `/Users/christian/vault/Hypatos/Fundus`. The next major setup work is a verified one-time migration from `Wiki/` to `Fundus/`, including active notes, quiet archived-note preservation, strict reserved-file cleanup for `index.md` and `log.md`, and an index rebuild. Start implementation work from `docs/agent-implementation-tracker.md`.
 
 ## Layout
 
@@ -28,10 +28,11 @@ The live legacy corpus currently exists under `/Users/christian/vault/Hypatos/Wi
 - `docs/`: project documentation for maintainers.
 - `Taskfile.yml`: local development tasks.
 
-## Roadmap Documents
+## Agent Documentation
 
-- `docs/fundus-plugin-roadmap.md`: current target picture, DDD decisions, migration plan, plugin roadmap, and backlog.
-- `docs/implementation.md`: current helper, MCP, packaging, permissions, and runtime notes.
+- `docs/agent-implementation-tracker.md`: active multi-pass work tracker, phase status board, implementation inventory, backlog, and pass protocol. Start here when implementing the target solution.
+- `docs/fundus-target-picture.md`: stable target picture, DDD decisions, corpus findings, OKF-compatible profile, source hierarchy, and plugin architecture.
+- `docs/implementation.md`: current helper, MCP, packaging, permissions, and runtime notes. Update this when code behavior changes.
 
 ## Build
 
