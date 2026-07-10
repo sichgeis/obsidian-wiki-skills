@@ -174,9 +174,10 @@ Where supported, test:
 
 After `area init`:
 
-- `index.md` has no frontmatter,
-- `log.md` has no frontmatter,
 - `overview.md` has concept frontmatter,
+- no category directory exists by default,
+- `index.md` and `log.md` do not exist unless explicitly requested,
+- requested `index.md` and `log.md` have no frontmatter,
 - corpus verification passes,
 - index records reserved files according to the selected policy.
 
@@ -623,6 +624,23 @@ Run the normal P20 release checklist plus:
 ```
 
 The host smoke uses a synthetic note and temporary configuration. It must be large enough for at least three server pages; a one-call short-note check is insufficient evidence.
+
+## P23 lean area and layout migration validation
+
+Use temporary vaults for every automated migration test. Cover:
+
+- lean default initialization and both optional reserved files;
+- deterministic global and single-area proposals;
+- structural flattening and the three-source grouping threshold;
+- destination collisions and duplicate destinations;
+- stale source and backlink revisions;
+- relative, vault-root, angle-wrapped, encoded, anchored, titled, image, and wikilink rewrites;
+- links inside moved documents and backlinks from unchanged reserved/concept notes;
+- stable-ID and pure-move byte preservation;
+- verified backup creation, index rebuild, corpus verification, and idempotent re-planning;
+- injected failure after destination and backlink writes with complete journal rollback.
+
+Before a live apply, rehearse the exact policy and semantic manifest on a disposable vault copy. Immediately before apply, create and verify a new live backup. After apply, compare corpus counts and stable IDs, verify the index, search representative scopes, inspect all rewrites, and confirm no previously resolving local link is broken.
 
 ## Required evidence format
 

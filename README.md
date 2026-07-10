@@ -194,13 +194,27 @@ python dist/fundus/scripts/fundus.py create \
   --content-file /tmp/note.md
 ```
 
-Initialize an area skeleton only when explicitly starting a new area:
+Initialize a lean area only when explicitly starting a new area:
 
 ```bash
 python dist/fundus/scripts/fundus.py area init --area "Epics/AI Agent Templates" --type Epic --title "AI Agent Templates"
 ```
 
-This creates `index.md`, `log.md`, `overview.md`, and standard subfolders without overwriting existing files.
+This creates only `overview.md` and never overwrites an existing file. Add `--with-index` or `--with-log` when the area genuinely needs those curated reserved files. Typed concept notes otherwise stay at the area root; introduce `sources/` only when several raw evidence documents benefit from grouping.
+
+Preview the deterministic, link-safe simplification of legacy area folders without writing:
+
+```bash
+python dist/fundus/scripts/fundus.py area layout plan --global > /tmp/fundus-area-layout.json
+```
+
+Review the proposal's moves, revisions, link rewrites, collisions, and warnings. Apply that exact file only after review:
+
+```bash
+python dist/fundus/scripts/fundus.py area layout apply --proposal-file /tmp/fundus-area-layout.json
+```
+
+Apply rejects changed notes or destinations, creates and verifies a current backup, journals all touched files, rewrites relative links and backlinks, rebuilds the index, verifies the corpus, and rolls back on failure. Use `--area "Epics/AI Agent Templates"` instead of `--global` to plan one area.
 
 The refined target profile treats active non-reserved notes as OKF-compatible concept notes. Reserved `index.md` and `log.md` files should become pure OKF reserved files without frontmatter during the canonical `Fundus/` migration. Concept metadata belongs in regular notes such as `overview.md`.
 

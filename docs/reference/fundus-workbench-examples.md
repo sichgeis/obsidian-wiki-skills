@@ -106,3 +106,15 @@ Use area scope for:
 - cross-repository decisions
 
 When uncertain, infer the best scope and report where the note was saved. The user can move it later.
+
+## Area Maintenance
+
+User: "Simplify the old epic folders."
+
+Agent behavior:
+
+- Use the administrative CLI `area layout plan` first; planning is read-only.
+- Review every move, collision, warning, source revision, and link rewrite.
+- Apply only the exact proposal file when the user authorized the bulk change.
+- Report the verified backup ID, move/link counts, corpus result, and rollback point.
+- Do not imitate the proposal with shell moves or direct Markdown edits.

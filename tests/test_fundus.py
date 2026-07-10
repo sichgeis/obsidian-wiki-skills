@@ -2065,19 +2065,44 @@ class ScopeAndAreaTest(FundusTestCase):
         self.assertEqual(restored["path"], result["path"])
         self.assertTrue((self.vault_path / result["path"]).exists())
 
-    def test_area_init_creates_skeleton_without_overwriting(self) -> None:
+    def test_area_init_is_lean_by_default_without_overwriting(self) -> None:
         result = fundus.area_init(self.config, "demo", "Epics/AI Agent Templates", "Epic", "AI Agent Templates")
         second = fundus.area_init(self.config, "demo", "Epics/AI Agent Templates", "Epic", "AI Agent Templates")
 
-        self.assertIn("Fundus/Epics/AI Agent Templates/overview.md", result["created"])
-        self.assertIn("Fundus/Epics/AI Agent Templates/index.md", second["skipped"])
+        self.assertEqual(result["created"], ["Fundus/Epics/AI Agent Templates/overview.md"])
+        self.assertEqual(second["skipped"], ["Fundus/Epics/AI Agent Templates/overview.md"])
+        self.assertEqual(result["directories"], [])
         for filename in fundus.RESERVED_FILENAMES:
             reserved = self.vault_path / "Fundus" / "Epics" / "AI Agent Templates" / filename
-            frontmatter, _ = fundus.parse_frontmatter(reserved.read_text())
-            self.assertEqual(frontmatter, {})
+            self.assertFalse(reserved.exists())
         self.assertTrue(fundus.verify_fundus_corpus(self.config)["passed"])
         for directory in fundus.AREA_SUBDIRECTORIES:
-            self.assertTrue((self.vault_path / "Fundus" / "Epics" / "AI Agent Templates" / directory).is_dir())
+            self.assertFalse((self.vault_path / "Fundus" / "Epics" / "AI Agent Templates" / directory).exists())
+
+    def test_area_init_can_add_optional_reserved_files(self) -> None:
+        result = fundus.area_init(
+            self.config,
+            "demo",
+            "Epics/AI Agent Templates",
+            "Epic",
+            "AI Agent Templates",
+            with_index=True,
+            with_log=True,
+        )
+
+        self.assertEqual(
+            result["created"],
+            [
+                "Fundus/Epics/AI Agent Templates/overview.md",
+                "Fundus/Epics/AI Agent Templates/index.md",
+                "Fundus/Epics/AI Agent Templates/log.md",
+            ],
+        )
+        for filename in fundus.RESERVED_FILENAMES:
+            frontmatter, _ = fundus.parse_frontmatter(
+                (self.vault_path / "Fundus" / "Epics" / "AI Agent Templates" / filename).read_text()
+            )
+            self.assertEqual(frontmatter, {})
 
     def test_move_document_moves_note_and_refreshes_index(self) -> None:
         result = fundus.create_document(self.config, "demo", "Movable", "Body", ["ticket"])
@@ -2226,6 +2251,134 @@ class ScopeAndAreaTest(FundusTestCase):
         with self.assertRaises(fundus.FundusError) as invalid:
             fundus.read_document(self.config, "Fundus/demo/b.md")
         self.assertEqual(invalid.exception.code, "REDIRECT_INVALID")
+
+
+class AreaLayoutMigrationTest(FundusTestCase):
+    def create_nested_area_note(self, title: str, relative_path: str, body: str) -> Path:
+        area = fundus.area_scope("Epics/Lean Epic")
+        created = fundus.create_document(self.config, "demo", title, body, ["layout-test"], area)
+        source = self.vault_path / created["path"]
+        destination = self.vault_path / "Fundus" / "Epics" / "Lean Epic" / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        source.replace(destination)
+        return destination
+
+    def prepare_linked_layout(self) -> dict[str, Path]:
+        fundus.area_init(self.config, "demo", "Epics/Lean Epic", "Epic", "Lean Epic", with_index=True)
+        story = self.create_nested_area_note(
+            "Story",
+            "stories/story.md",
+            "# Story\n\n[Overview](../overview.md) and [Source](../references/source.md#Evidence \"source\").",
+        )
+        source = self.create_nested_area_note("Source", "references/source.md", "# Evidence\n\nRaw source.")
+        interview = self.create_nested_area_note("Interview", "interviews/interview.md", "# Interview\n\nRaw interview.")
+        visual = self.create_nested_area_note("Visual", "references/visual.md", "# Visual\n\nRaw visual.")
+        index = self.vault_path / "Fundus" / "Epics" / "Lean Epic" / "index.md"
+        index.write_text("# Lean Epic Index\n\n[Story](stories/story.md)\n")
+        fundus.rebuild_index(self.config)
+        return {"story": story, "source": source, "interview": interview, "visual": visual, "index": index}
+
+    def test_plan_is_deterministic_and_apply_rewrites_links_with_verified_backup(self) -> None:
+        paths = self.prepare_linked_layout()
+        original_story_id = fundus.load_document(paths["story"], self.vault_path).frontmatter["id"]
+
+        first = fundus.propose_area_layout(self.config, global_scope=True)
+        second = fundus.propose_area_layout(self.config, global_scope=True)
+
+        self.assertEqual(first["proposal_id"], second["proposal_id"])
+        self.assertEqual(first["move_count"], 4)
+        self.assertEqual(first["rewrite_document_count"], 2)
+        self.assertEqual(first["collisions"], [])
+        self.assertEqual(first["new_broken_links"], [])
+
+        applied = fundus.apply_area_layout_proposal(self.config, first)
+        moved_story = self.vault_path / "Fundus" / "Epics" / "Lean Epic" / "story.md"
+        moved_source = self.vault_path / "Fundus" / "Epics" / "Lean Epic" / "sources" / "source.md"
+
+        self.assertTrue(applied["backup"]["verified"])
+        self.assertTrue(applied["verification"]["passed"])
+        self.assertEqual(applied["link_verification"]["new_broken_links"], [])
+        self.assertTrue(moved_story.exists())
+        self.assertTrue(moved_source.exists())
+        self.assertFalse(paths["story"].exists())
+        self.assertFalse(paths["source"].exists())
+        self.assertFalse(paths["story"].parent.exists())
+        self.assertEqual(fundus.load_document(moved_story, self.vault_path).frontmatter["id"], original_story_id)
+        moved_text = moved_story.read_text()
+        self.assertIn("[Overview](overview.md)", moved_text)
+        self.assertIn('[Source](sources/source.md#Evidence "source")', moved_text)
+        self.assertIn("[Story](story.md)", paths["index"].read_text())
+        self.assertEqual(fundus.propose_area_layout(self.config, global_scope=True)["move_count"], 0)
+
+    def test_apply_rejects_stale_and_colliding_plans_without_writes(self) -> None:
+        paths = self.prepare_linked_layout()
+        stale = fundus.propose_area_layout(self.config, global_scope=True)
+        paths["story"].write_text(paths["story"].read_text() + "\nExternal edit.\n")
+
+        with self.assertRaises(fundus.FundusError) as stale_error:
+            fundus.apply_area_layout_proposal(self.config, stale)
+        self.assertEqual(stale_error.exception.code, "REVISION_CONFLICT")
+        self.assertTrue(paths["story"].exists())
+
+        collision_path = self.vault_path / "Fundus" / "Epics" / "Lean Epic" / "story.md"
+        collision_path.write_text(paths["story"].read_text())
+        collision = fundus.propose_area_layout(self.config, global_scope=True)
+        self.assertEqual(collision["collisions"][0]["reason"], "destination_exists")
+        with self.assertRaises(fundus.FundusError) as collision_error:
+            fundus.apply_area_layout_proposal(self.config, collision)
+        self.assertEqual(collision_error.exception.code, "AREA_LAYOUT_COLLISION")
+
+    def test_apply_rolls_back_all_files_after_injected_failure(self) -> None:
+        paths = self.prepare_linked_layout()
+        proposal = fundus.propose_area_layout(self.config, global_scope=True)
+        original_index = paths["index"].read_bytes()
+
+        def fail_after_backlinks(operation: str, step: str) -> None:
+            if operation == "area-layout" and step == "backlinks_written":
+                raise RuntimeError("injected")
+
+        fundus.MUTATION_FAILURE_INJECTOR = fail_after_backlinks
+        try:
+            with self.assertRaisesRegex(RuntimeError, "injected"):
+                fundus.apply_area_layout_proposal(self.config, proposal)
+        finally:
+            fundus.MUTATION_FAILURE_INJECTOR = None
+
+        self.assertTrue(paths["story"].exists())
+        self.assertTrue(paths["source"].exists())
+        self.assertEqual(paths["index"].read_bytes(), original_index)
+        self.assertFalse((self.vault_path / "Fundus" / "Epics" / "Lean Epic" / "story.md").exists())
+        self.assertEqual(list((self.vault_path / "Fundus" / fundus.JOURNAL_DIRNAME).glob("*")), [])
+
+    def test_link_rewrite_fixture_preserves_markdown_semantics(self) -> None:
+        current_files = {
+            "Fundus/Epics/Lean Epic/stories/story.md",
+            "Fundus/Epics/Lean Epic/references/source.md",
+            "Fundus/Epics/Lean Epic/references/source file.md",
+            "Fundus/Epics/Lean Epic/references/diagram.png",
+        }
+        move_map = {
+            "Fundus/Epics/Lean Epic/stories/story.md": "Fundus/Epics/Lean Epic/story.md",
+            "Fundus/Epics/Lean Epic/references/source.md": "Fundus/Epics/Lean Epic/sources/source.md",
+            "Fundus/Epics/Lean Epic/references/source file.md": "Fundus/Epics/Lean Epic/sources/source file.md",
+        }
+        final_files = (current_files - set(move_map)) | set(move_map.values())
+        cases = json.loads((FIXTURES_DIR / "area_layout_cases.json").read_text())
+
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                rewritten, changes, broken = fundus.rewrite_layout_links(
+                    self.config,
+                    case["content"],
+                    "Fundus/Epics/Lean Epic/stories/story.md",
+                    "Fundus/Epics/Lean Epic/story.md",
+                    move_map,
+                    current_files,
+                    final_files,
+                )
+                self.assertEqual(rewritten, case["expected"])
+                self.assertTrue(changes)
+                self.assertEqual(broken, [])
 
 
 class PathSafetyTest(FundusTestCase):

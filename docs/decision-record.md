@@ -164,3 +164,20 @@ The exact number may be chosen during P20, but protocol, configuration, and writ
 **Decision:** The repository must contain the license file declared by the plugin manifest.
 
 If the manifest says MIT, add a valid MIT `LICENSE` file and confirm that any new dependencies are license-compatible.
+
+## D13 — Content-driven area layouts
+
+**Decision:** Fundus areas start lean and grow folders only from actual content needs.
+
+`overview.md` is the only default area file. `index.md` and `log.md` are optional reserved files. Typed concept notes normally live at the logical area root; several raw evidence documents may be grouped under `sources/`.
+
+The former seven-folder scaffold is a Fundus convention, not an Open Knowledge Format requirement. OKF permits producer-defined directories and optional index/log files. Physical placement remains independent of stable identity and logical `scope_path`.
+
+Existing areas are simplified only through a deterministic proposal-first migration that is revision-bound, collision-aware, link-safe, backed up, journaled, verified, and recoverable. Curated reserved files are preserved rather than deleted mechanically.
+
+**Consequences:**
+
+- Agents need fewer directory reads to understand a small epic or domain.
+- Classification remains explicit in frontmatter type and tags.
+- Areas with substantial raw evidence can still use `sources/` without forcing that cost on every area.
+- Bulk layout changes require review of the exact proposal and a verified current backup.

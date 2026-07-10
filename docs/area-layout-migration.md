@@ -1,6 +1,6 @@
 # Fundus 0.2.3 Area Layout Migration
 
-Status: steering contract in progress
+Status: disposable-vault rehearsal in progress
 Date: 2026-07-10
 Branch: `codex/fundus-0-2-3-lean-areas`
 Baseline: `75090fe` (`v0.2.2`)
@@ -113,9 +113,9 @@ Apply must:
 
 | Stage | Status | Exit evidence |
 | --- | --- | --- |
-| Steering contract | in_progress | Tracker and this specification committed and pushed |
-| Runtime and tests | pending | Focused suites and `task verify` pass; P23 review complete |
-| Disposable-vault rehearsal | pending | Exact policy and semantic manifest apply cleanly with rollback exercise |
+| Steering contract | completed | Tracker and this specification committed and pushed in `f64d775` |
+| Runtime and tests | completed | 16 focused tests and 146-test full verification pass; P23 review complete |
+| Disposable-vault rehearsal | in_progress | Exact policy and semantic manifest apply cleanly with rollback exercise |
 | Live backup and apply | pending | Backup verified; proposal applied; corpus/index/link checks pass |
 | Release and install | pending | 0.2.3 package, tag, install, and fresh-host smoke verified |
 
@@ -129,4 +129,4 @@ Rollback immediately if apply reports a journal failure, active documents or sta
 
 ## Current next action
 
-Commit and push this steering contract, then implement P23 only against disposable vaults.
+Commit and push the verified P23 implementation, then generate the final read-only live proposal and rehearse it against a disposable vault copy.

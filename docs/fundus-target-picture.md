@@ -275,21 +275,20 @@ Fundus/
 │   └── decisions/
 ├── Epics/
 │   └── AI Agent Templates/
-│       ├── index.md
-│       ├── log.md
 │       ├── overview.md
-│       ├── decisions/
-│       ├── open-questions/
-│       ├── stories/
-│       ├── interviews/
-│       ├── domain-model/
-│       ├── implementation-map/
-│       └── references/
+│       ├── domain.md
+│       ├── implementation.md
+│       └── sources.md
 ├── Domains/
+│   └── Similarity Retrieval/
+│       ├── overview.md
+│       └── sources/
 ├── Decisions/
 ├── Operations/
 └── _archive/
 ```
+
+Area layout is content-driven. `overview.md` is the only default scaffold; `index.md` and `log.md` remain optional reserved files. Typed concepts normally stay flat at the area root. A `sources/` directory is appropriate when several raw evidence files benefit from grouping. Physical folders do not alter logical `scope_path`.
 
 ### Concept notes
 

@@ -187,7 +187,7 @@ python /path/to/fundus/scripts/fundus.py backup restore --id BACKUP_ID --apply
 
 Backups are stored under `{vault_path}/.fundus-backups/` and are excluded from normal Fundus indexing. Restore is a dry-run unless `--apply` is present; apply verifies checksums, creates a current-state safety backup, uses the mutation journal, rebuilds the index, and verifies the restored corpus.
 
-## Area Setup
+## Area Setup and Layout Migration
 
 ```bash
 python /path/to/fundus/scripts/fundus.py area init \
@@ -196,7 +196,23 @@ python /path/to/fundus/scripts/fundus.py area init \
   --title "AI Agent Templates"
 ```
 
-Area init creates `index.md`, `log.md`, `overview.md`, and standard subfolders without overwriting existing files.
+Area init creates only `overview.md` by default and does not overwrite existing files. Add `--with-index` or `--with-log` when those curated reserved files are useful. It does not pre-create category directories.
+
+Plan the content-driven layout globally or for one area:
+
+```bash
+python /path/to/fundus/scripts/fundus.py area layout plan --global
+python /path/to/fundus/scripts/fundus.py area layout plan --area "Epics/AI Agent Templates"
+```
+
+The deterministic JSON proposal includes exact source/destination paths, revisions, stable IDs, link rewrites, collisions, warnings, and its integrity-bound proposal ID. Planning is read-only. Save and review the complete JSON, then apply that exact proposal:
+
+```bash
+python /path/to/fundus/scripts/fundus.py area layout apply \
+  --proposal-file /tmp/fundus-area-layout.json
+```
+
+Apply rejects stale or colliding state before writing. It creates and verifies a current backup, journals every touched file, preserves pure-move bytes and stable IDs, rebases links inside moved notes, rewrites active backlinks, removes only empty legacy directories, rebuilds the index, verifies the corpus, and rolls back the mutation on failure.
 
 ## Index
 

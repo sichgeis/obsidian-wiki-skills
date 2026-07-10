@@ -205,3 +205,19 @@ Every segment in one read sequence MUST be bound to the same requested path, res
 Silent truncation, an unmarked partial result, or a continuation sequence with gaps or duplicated content is not permitted.
 
 The current release bound is 2,000 decoded characters per agent-facing page. A complete page has no continuation cursor; an incomplete page always has one.
+
+### FND-035 — Area layout follows content
+
+New area initialization MUST create only `overview.md` unless optional reserved files are explicitly requested. It MUST NOT pre-create empty category directories. Typed concept notes SHOULD remain at the logical area root; `sources/` MAY group multiple raw evidence notes.
+
+### FND-036 — Layout planning is deterministic and read-only
+
+An area-layout plan MUST NOT mutate the vault. Identical selected state MUST produce the same proposal ID, exact moves, revisions, stable IDs, link rewrites, collisions, and warnings.
+
+### FND-037 — Layout apply is exact and recoverable
+
+Layout apply MUST accept only the exact fresh proposal, serialize globally, reject collisions and changed revisions before writes, create and verify a current backup, journal all touched files, rebuild the index, verify the corpus, and roll back the logical mutation on failure.
+
+### FND-038 — Layout moves preserve navigation and identity
+
+A layout migration MUST preserve stable IDs and exact bytes for pure moves. When a moved path changes Markdown navigation, Fundus MUST rebase links inside moved documents and rewrite active backlinks while preserving labels, anchors, and titles. It MUST NOT introduce a broken local link that resolved before the migration.

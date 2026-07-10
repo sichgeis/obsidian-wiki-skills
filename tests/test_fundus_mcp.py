@@ -272,6 +272,7 @@ class McpWrapperTest(McpFundusTestCase):
             "Epics/AI Agent Templates",
             "AI Agent Templates",
             "Epic",
+            with_index=True,
             project_root=str(self.project_root),
         )
 

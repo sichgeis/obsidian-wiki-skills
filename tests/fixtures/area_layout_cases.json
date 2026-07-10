@@ -1,0 +1,42 @@
+[
+  {
+    "name": "relative anchor and title",
+    "content": "[Source](../references/source.md#Evidence \"primary\")",
+    "expected": "[Source](sources/source.md#Evidence \"primary\")"
+  },
+  {
+    "name": "vault absolute",
+    "content": "[Source](/Fundus/Epics/Lean%20Epic/references/source.md)",
+    "expected": "[Source](/Fundus/Epics/Lean%20Epic/sources/source.md)"
+  },
+  {
+    "name": "vault relative",
+    "content": "[Source](Fundus/Epics/Lean%20Epic/references/source.md)",
+    "expected": "[Source](Fundus/Epics/Lean%20Epic/sources/source.md)"
+  },
+  {
+    "name": "angle wrapped and encoded",
+    "content": "[Source](<../references/source%20file.md>)",
+    "expected": "[Source](<sources/source%20file.md>)"
+  },
+  {
+    "name": "wikilink label",
+    "content": "[[../references/source.md#Evidence|Source]]",
+    "expected": "[[sources/source.md#Evidence|Source]]"
+  },
+  {
+    "name": "reference link definition",
+    "content": "[source]: ../references/source.md#Evidence \"primary\"",
+    "expected": "[source]: sources/source.md#Evidence \"primary\""
+  },
+  {
+    "name": "unmoved image rebase",
+    "content": "![Diagram](../references/diagram.png)",
+    "expected": "![Diagram](references/diagram.png)"
+  },
+  {
+    "name": "quoted redirect metadata",
+    "content": "redirect_to: \"Fundus/Epics/Lean Epic/references/source.md\"",
+    "expected": "redirect_to: \"Fundus/Epics/Lean Epic/sources/source.md\""
+  }
+]

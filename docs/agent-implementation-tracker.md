@@ -1,9 +1,9 @@
 # Fundus Agent Implementation Tracker
 
-Status: Fundus 0.2.3 lean-area patch active
+Status: Fundus 0.2.3 live migration and release active
 Date: 2026-07-10
 Current iteration: P23-P24
-First active phase: P23
+First active phase: P24
 
 ## Agent read order
 
@@ -130,8 +130,8 @@ Decisions for the next iteration:
 | P20 — Modularization, CI, and release readiness | done | medium | P13-P19 |
 | P21 — Lossless complete-note reads | done | critical | P17, P20 |
 | P22 — Fundus 0.2.2 release validation | done | high | P21 |
-| P23 — Lean content-driven areas and safe layout migration | in_progress | critical | P14, P16, P18 |
-| P24 — Live vault migration and Fundus 0.2.3 release | planned | critical | P23 |
+| P23 — Lean content-driven areas and safe layout migration | done | critical | P14, P16, P18 |
+| P24 — Live vault migration and Fundus 0.2.3 release | in_progress | critical | P23 |
 
 P23 and P24 are deliberately sequential. Complete and verify the migration engine on disposable vaults before creating a current live-vault backup or applying P24.
 
@@ -1252,7 +1252,7 @@ Package, install, and smoke-test the complete-read contract as Fundus 0.2.2 afte
 
 ## P23 — Lean content-driven areas and safe layout migration
 
-Status: in_progress
+Status: done
 
 ### Goal
 
@@ -1269,23 +1269,23 @@ Replace eager universal area scaffolding with a content-driven layout and add a 
 
 ### Required implementation
 
-- [ ] Make `area init` create only `overview.md` by default and add explicit `--with-index` and `--with-log` options.
-- [ ] Add deterministic `area layout plan` output with proposal ID, source/destination paths, source revisions, stable IDs, link rewrites, collisions, warnings, and policy metadata.
-- [ ] Add exact-proposal `area layout apply` with global locking, staleness/collision rejection, a verified current backup, mutation journaling, rollback, index rebuild, and corpus/link verification.
-- [ ] Rebase relative links inside moved documents and rewrite backlinks across all active Markdown while preserving labels, anchors, titles, and root-relative semantics.
-- [ ] Preserve stable IDs and body bytes for pure moves; preserve and rewrite curated area `index.md` and `log.md` files.
-- [ ] Remove only emptied legacy category directories after successful apply.
-- [ ] Cover deterministic plans, collisions, stale revisions, link variants, redirects, rollback checkpoints, index freshness, and idempotent re-planning with temporary-vault tests.
-- [ ] Update architecture, decision, target-picture, implementation, testing, CLI, workbench, README, and skill documentation.
-- [ ] Run focused tests and `task verify`; review the patch before marking P23 done.
+- [x] Make `area init` create only `overview.md` by default and add explicit `--with-index` and `--with-log` options.
+- [x] Add deterministic `area layout plan` output with proposal ID, source/destination paths, source revisions, stable IDs, link rewrites, collisions, warnings, and policy metadata.
+- [x] Add exact-proposal `area layout apply` with global locking, staleness/collision rejection, a verified current backup, mutation journaling, rollback, index rebuild, and corpus/link verification.
+- [x] Rebase relative links inside moved documents and rewrite backlinks across all active Markdown while preserving labels, anchors, titles, and root-relative semantics.
+- [x] Preserve stable IDs and body bytes for pure moves; preserve and rewrite curated area `index.md` and `log.md` files.
+- [x] Remove only emptied legacy category directories after successful apply.
+- [x] Cover deterministic plans, collisions, stale revisions, link variants, redirects, rollback checkpoints, index freshness, and idempotent re-planning with temporary-vault tests.
+- [x] Update architecture, decision, target-picture, implementation, testing, CLI, workbench, README, and skill documentation.
+- [x] Run focused tests and `task verify`; review the patch before marking P23 done.
 
 ### Acceptance criteria
 
-- [ ] A new area is lean by default and optional reserved files remain available.
-- [ ] Planning never mutates the vault and identical state produces an identical proposal ID.
-- [ ] Apply accepts only the exact fresh proposal, creates a recoverable backup, and leaves no partial state on injected failure.
-- [ ] Successful migration introduces no new broken local Markdown links and preserves all active documents and stable IDs.
-- [ ] The full automated suite uses disposable vaults and passes.
+- [x] A new area is lean by default and optional reserved files remain available.
+- [x] Planning never mutates the vault and identical state produces an identical proposal ID.
+- [x] Apply accepts only the exact fresh proposal, creates a recoverable backup, and leaves no partial state on injected failure.
+- [x] Successful migration introduces no new broken local Markdown links and preserves all active documents and stable IDs.
+- [x] The full automated suite uses disposable vaults and passes.
 
 ### Expected implementation surface
 
@@ -1299,11 +1299,21 @@ README.md
 docs/
 ```
 
+### Completion evidence — 2026-07-10
+
+- Focused suite: `python3 -m unittest tests.test_fundus.AreaLayoutMigrationTest tests.test_fundus.ScopeAndAreaTest tests.test_fundus_mcp.McpWrapperTest.test_area_init_wrapper_creates_skeleton` passed 16 tests.
+- Full operation/MCP unit suite passed 133 tests.
+- `task verify` built and validated the source skill, plugin, and marketplace; release smoke and four independent MCP integration tests passed; full discovery passed 146 tests with one intentional skip.
+- Fixture coverage includes relative, rooted, encoded, angle-wrapped, anchored, titled, image, reference-definition, wikilink, and quoted redirect rewrites.
+- An injected failure after backlink writes restored all sources, destinations, curated index bytes, and the mutation journal to the pre-apply state. A checksum-verified backup was retained.
+- Review found no personal path, generated artifact, or unrelated change in the tracked diff. The live vault was not mutated in P23.
+- Next phase: rehearse the exact live proposal and semantic curation manifest in P24.
+
 ---
 
 ## P24 — Live vault migration and Fundus 0.2.3 release
 
-Status: planned
+Status: in_progress
 
 ### Goal
 

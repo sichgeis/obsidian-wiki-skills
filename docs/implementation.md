@@ -210,7 +210,13 @@ The documented corpus contract says active `index.md` and `log.md` have no front
 
 Migration and verification enforce that rule.
 
-`area_init()` writes concept frontmatter only to `overview.md`; `index.md` and `log.md` are frontmatter-free reserved files. A newly initialized area passes corpus verification.
+`area_init()` creates only the frontmatter-bearing `overview.md` by default. `with_index` and `with_log` explicitly add frontmatter-free reserved files. It creates no category directories, and every variant immediately passes corpus verification.
+
+### Current area-layout migration behavior
+
+`propose_area_layout()` is a read-only deterministic planner for one area or all areas. It flattens the legacy structural categories to the logical area root and combines `interviews/` plus `references/` under `sources/` only when their area contains at least three raw documents. The proposal binds source revisions, stable IDs, exact destinations, rewritten content, collisions, and newly broken-link checks into one SHA-256 proposal ID.
+
+`apply_area_layout_proposal()` regenerates the plan under the corpus lock and rejects any stale, tampered, colliding, or link-breaking state. Before writes it creates and checksum-verifies a full current backup. One mutation journal covers sources, destinations, backlinks, and the index. Pure moves retain exact bytes; touched Markdown links keep labels, anchors, and titles while relative paths are rebased from their final document location. Apply removes only emptied legacy directories, rebuilds the index, verifies the corpus, and rolls back all touched files on failure.
 
 ### Current scope move behavior
 

@@ -58,6 +58,7 @@ Do not use Fundus when the user opts out, when the content is casual/non-work kn
 - Record `verified_against`, `source_fingerprint`, and `verification_status` when current source evidence is known. Use `mark_stale` when evidence is contradicted and `verify_note` after checking current sources.
 - Without broad Fundus write intent, stale research produces a proposal or concise suggestion, not `apply_update` or an immediate mutation.
 - Active `index.md` and `log.md` are reserved files; concept metadata belongs in notes such as `overview.md`.
+- Initialize areas leanly: `overview.md` is the default, `index.md` and `log.md` are opt-in, and typed concept notes normally live at the area root. Add `sources/` only when grouping several raw evidence notes improves navigation.
 - Move notes through the Fundus move operation so stable IDs, logical scope, and scope tags stay consistent. Use a redirect stub only when old paths must remain readable; redirects are not ordinary search evidence.
 
 ## Migration And Maintenance
@@ -67,13 +68,14 @@ Do not use Fundus when the user opts out, when the content is casual/non-work kn
 - Use `migrate wiki-to-fundus --dry-run`, then `--apply`, then `--verify` only for recovery or deliberate re-run workflows.
 - Migration must back up the source, stage the transformed destination, clean reserved `index.md` and `log.md` frontmatter, preserve archives under `Fundus/_archive/`, rebuild the index, verify, and retire old `Wiki/` as a live source unless explicitly kept.
 - Create backups before migration, curation, or bulk path changes.
+- Simplify legacy area folders only through `area layout plan` followed by exact `area layout apply`. Review collisions, warnings, revisions, moves, and link rewrites before apply; never reproduce the plan with a series of raw file moves.
 - Archive only explicit selected paths; use archive candidates for review.
 
 ## Codex Permission Behavior
 
 - Prefer the plugin-provided `fundus` MCP tools for normal Fundus reads and writes.
-- Read-only helper calls such as `scan`, `read`, `doctor`, `index status`, `archive candidates`, and migration `--dry-run` should not request write escalation.
-- Write-like calls such as `create`, `update`, `index rebuild`, `archive apply`, `archive restore`, `archive cleanup`, and migration `--apply` need escalated sandbox permissions when the vault is outside the writable workspace.
+- Read-only helper calls such as `scan`, `read`, `doctor`, `index status`, `archive candidates`, `area layout plan`, and migration `--dry-run` should not request write escalation.
+- Write-like calls such as `create`, `update`, `index rebuild`, `archive apply`, `archive restore`, `archive cleanup`, `area layout apply`, and migration `--apply` need escalated sandbox permissions when the vault is outside the writable workspace.
 - If MCP tools are unavailable and you must use the CLI helper, run `scripts/fundus.py` from the loaded skill package or from the repository build. Do not assume the legacy direct-skill path `~/.codex/skills/fundus`; plugin installs live under the versioned Codex plugin cache.
 - If you cannot locate the helper path, ask for help or report the blocked write. Never fall back to editing vault Markdown directly.
 - If the exact helper prefix is already allowlisted, do not pass a new `prefix_rule`; keep required escalation justifications terse.

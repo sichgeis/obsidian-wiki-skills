@@ -354,9 +354,17 @@ def backup_restore(id: str, apply: bool = False, project_root: str | None = None
     return fundus_core.restore_backup(context.config, id, apply)
 
 
-def area_init(area: str, title: str, type: str = "Area", project: str | None = None, project_root: str | None = None) -> dict[str, Any]:
+def area_init(
+    area: str,
+    title: str,
+    type: str = "Area",
+    project: str | None = None,
+    project_root: str | None = None,
+    with_index: bool = False,
+    with_log: bool = False,
+) -> dict[str, Any]:
     context = resolve_context(project, project_root)
-    return fundus_core.area_init(context.config, context.project_name, area, type, title)
+    return fundus_core.area_init(context.config, context.project_name, area, type, title, with_index, with_log)
 
 
 def index_status(project_root: str | None = None) -> dict[str, Any]:
@@ -818,7 +826,7 @@ def build_operation_registry(include_admin: bool = False) -> list[OperationSpec]
         ("backup_inspect", "Inspect Backup", "Read one Fundus backup manifest.", backup_inspect, True, False, True),
         ("backup_verify", "Verify Backup", "Verify all backup sizes and checksums.", backup_verify, True, False, True),
         ("backup_restore", "Restore Backup", "Plan or apply a verified full-corpus restore.", backup_restore, False, True, False),
-        ("area_init", "Initialize Area", "Create a Fundus area skeleton without overwriting files.", area_init, False, False, True),
+        ("area_init", "Initialize Area", "Create a lean Fundus area without overwriting files.", area_init, False, False, True),
         ("index_status", "Index Status", "Report index validity and stale paths.", index_status, True, False, True),
         ("index_rebuild", "Rebuild Index", "Persist a complete derived search index rebuild.", index_rebuild, False, False, True),
         ("migrate_wiki_to_fundus", "Migrate Wiki", "Plan, apply, or verify the legacy Wiki migration.", migrate_wiki_to_fundus, False, True, False),

@@ -11,6 +11,7 @@ import hmac
 import io
 import json
 import os
+import posixpath
 import re
 import shutil
 import socket
@@ -24,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, unquote
 
 SCRIPT_PATH = Path(__file__).resolve()
 SKILL_DIR = SCRIPT_PATH.parents[2]
@@ -69,7 +71,7 @@ RESERVED_FILENAMES = {"index.md", "log.md"}
 RESERVED_FUNDUS_DIRNAMES = {ARCHIVE_DIRNAME, BACKUP_DIRNAME, JOURNAL_DIRNAME}
 ARCHIVE_DURABLE_TAGS = {"project-overview", "architecture", "runbook", "glossary"}
 ARCHIVE_BOOST_TAGS = {"ticket", "review", "investigation", "refinement"}
-AREA_SUBDIRECTORIES = [
+LEGACY_AREA_SUBDIRECTORIES = [
     "decisions",
     "open-questions",
     "stories",
@@ -78,6 +80,11 @@ AREA_SUBDIRECTORIES = [
     "implementation-map",
     "references",
 ]
+AREA_SUBDIRECTORIES = LEGACY_AREA_SUBDIRECTORIES
+STRUCTURAL_AREA_SUBDIRECTORIES = {"decisions", "open-questions", "stories", "domain-model", "implementation-map"}
+SOURCE_AREA_SUBDIRECTORIES = {"interviews", "references"}
+AREA_LAYOUT_POLICY_VERSION = 1
+AREA_LAYOUT_SOURCE_THRESHOLD = 3
 AREA_ROOT_DIRNAMES = {"Epics", "Domains", "Decisions", "Interviews", "References", "Logs", "Operations"}
 
 
@@ -3331,15 +3338,19 @@ def restore_document(
 
 
 @serialized_mutation
-def area_init(config: Config, project_name: str, area: str, area_type: str, title: str) -> dict[str, Any]:
+def area_init(
+    config: Config,
+    project_name: str,
+    area: str,
+    area_type: str,
+    title: str,
+    with_index: bool = False,
+    with_log: bool = False,
+) -> dict[str, Any]:
     scope = area_scope(area)
     root = fundus_scope_dir(config, scope)
     created_paths: list[str] = []
     skipped_paths: list[str] = []
-
-    for directory in AREA_SUBDIRECTORIES:
-        path = ensure_within(root, root / directory)
-        path.mkdir(parents=True, exist_ok=True)
 
     files = {
         "overview.md": (
@@ -3348,7 +3359,9 @@ def area_init(config: Config, project_name: str, area: str, area_type: str, titl
             f"Overview for {title}.",
             "## Overview\n\nDocument the durable area overview here.",
         ),
-        "index.md": (
+    }
+    if with_index:
+        files["index.md"] = (
             f"{title} Index",
             "Index",
             f"Progressive-disclosure index for {title}.",
@@ -3357,21 +3370,17 @@ def area_init(config: Config, project_name: str, area: str, area_type: str, titl
                     "## Core",
                     "",
                     "* [Overview](overview.md) - durable area overview",
-                    "* [Log](log.md) - chronological area activity",
-                    "",
-                    "## Sections",
-                    "",
-                    *[f"* [{directory}]({directory}/) - area notes" for directory in AREA_SUBDIRECTORIES],
+                    *(["* [Log](log.md) - chronological area activity"] if with_log else []),
                 ]
             ),
-        ),
-        "log.md": (
+        )
+    if with_log:
+        files["log.md"] = (
             f"{title} Log",
             "Log",
             f"Chronological activity log for {title}.",
-            f"## {datetime.now().astimezone().date().isoformat()}\n\n* **Initialization**: Created the area skeleton.",
-        ),
-    }
+            f"## {datetime.now().astimezone().date().isoformat()}\n\n* **Initialization**: Created the area.",
+        )
 
     for filename, (file_title, doc_type, description, body) in files.items():
         path = ensure_within(root, root / filename)
@@ -3404,7 +3413,436 @@ def area_init(config: Config, project_name: str, area: str, area_type: str, titl
         "path": str(root.relative_to(config.vault_path)),
         "created": created_paths,
         "skipped": skipped_paths,
-        "directories": [str((root / directory).relative_to(config.vault_path)) for directory in AREA_SUBDIRECTORIES],
+        "directories": [],
+        "with_index": with_index,
+        "with_log": with_log,
+    }
+
+
+MARKDOWN_LINK_PATTERN = re.compile(
+    r"(?P<prefix>!?\[[^\]\n]*\]\()(?P<target><[^>\n]+>|[^)\s]+)(?P<suffix>(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?\))"
+)
+REFERENCE_LINK_PATTERN = re.compile(
+    r"(?m)^(?P<prefix>[ \t]{0,3}\[[^\]\n]+\]:[ \t]*)(?P<target><[^>\n]+>|\S+)(?P<suffix>[ \t]*(?:\"[^\"]*\"|'[^']*'|\([^)]*\))?[ \t]*)$"
+)
+WIKILINK_PATTERN = re.compile(r"\[\[(?P<target>[^\]|\n]+)(?P<label>\|[^\]\n]*)?\]\]")
+REDIRECT_PATH_PATTERN = re.compile(
+    r"(?m)^(?P<prefix>(?:redirect_to|moved_to):\s*)(?P<quote>[\"']?)(?P<target>[^\"'\r\n]+?)(?P=quote)(?P<suffix>\s*)$"
+)
+
+
+def active_fundus_files(config: Config) -> list[Path]:
+    root = fundus_root_dir(config)
+    if not root.exists():
+        return []
+    return sorted(
+        path
+        for path in root.rglob("*")
+        if path.is_file()
+        and ARCHIVE_DIRNAME not in path.relative_to(root).parts
+        and BACKUP_DIRNAME not in path.relative_to(root).parts
+        and JOURNAL_DIRNAME not in path.relative_to(root).parts
+        and path.name not in {INDEX_FILENAME, LOCK_FILENAME}
+    )
+
+
+def area_layout_destination(config: Config, path: Path, raw_counts: dict[str, int]) -> Path | None:
+    root = fundus_root_dir(config)
+    relative = path.relative_to(root)
+    parts = relative.parts
+    if len(parts) < 4 or parts[0] not in AREA_ROOT_DIRNAMES:
+        return None
+    area_path = "/".join(parts[:2])
+    category = parts[2]
+    if category in STRUCTURAL_AREA_SUBDIRECTORIES:
+        destination_parts = parts[:2] + parts[3:]
+    elif category in SOURCE_AREA_SUBDIRECTORIES:
+        destination_parts = (
+            parts[:2] + ("sources",) + parts[3:]
+            if raw_counts.get(area_path, 0) >= AREA_LAYOUT_SOURCE_THRESHOLD
+            else parts[:2] + parts[3:]
+        )
+    else:
+        return None
+    return ensure_within(root, root.joinpath(*destination_parts))
+
+
+def _split_local_link_target(raw_target: str) -> tuple[str, str, bool] | None:
+    angled = raw_target.startswith("<") and raw_target.endswith(">")
+    target = raw_target[1:-1] if angled else raw_target
+    if not target or target.startswith("#") or re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", target):
+        return None
+    fragment_at = len(target)
+    for marker in ("#", "?"):
+        marker_at = target.find(marker)
+        if marker_at >= 0:
+            fragment_at = min(fragment_at, marker_at)
+    return target[:fragment_at], target[fragment_at:], angled
+
+
+def _resolve_local_link_path(
+    config: Config,
+    document_path: str,
+    raw_path: str,
+    known_files: set[str],
+) -> tuple[str, str, bool, bool] | None:
+    decoded = unquote(raw_path)
+    root_style = decoded.startswith("/")
+    vault_style = decoded.startswith(f"{config.fundus_dir}/")
+    if root_style:
+        candidate = posixpath.normpath(decoded.lstrip("/"))
+    elif vault_style:
+        candidate = posixpath.normpath(decoded)
+    else:
+        candidate = posixpath.normpath(posixpath.join(posixpath.dirname(document_path), decoded))
+    if candidate.startswith("../") or candidate == "..":
+        return None
+    omitted_markdown_suffix = not candidate.lower().endswith(".md")
+    resolved = candidate
+    if resolved not in known_files and omitted_markdown_suffix and f"{resolved}.md" in known_files:
+        resolved = f"{resolved}.md"
+    if resolved not in known_files and "/" not in decoded.strip("./"):
+        matches = sorted(path for path in known_files if posixpath.basename(path) in {decoded, f"{decoded}.md"})
+        if len(matches) == 1:
+            resolved = matches[0]
+    return resolved, decoded, root_style, vault_style
+
+
+def _render_rebased_link_path(
+    final_document_path: str,
+    final_target_path: str,
+    original_decoded: str,
+    root_style: bool,
+    vault_style: bool,
+    omitted_markdown_suffix: bool,
+) -> str:
+    rendered_target = final_target_path
+    if omitted_markdown_suffix and rendered_target.lower().endswith(".md"):
+        rendered_target = rendered_target[:-3]
+    if root_style:
+        rendered = f"/{rendered_target}"
+    elif vault_style:
+        rendered = rendered_target
+    else:
+        rendered = posixpath.relpath(rendered_target, posixpath.dirname(final_document_path))
+        if original_decoded.startswith("./") and not rendered.startswith("."):
+            rendered = f"./{rendered}"
+    return rendered
+
+
+def rewrite_layout_links(
+    config: Config,
+    content: str,
+    document_path: str,
+    final_document_path: str,
+    move_map: dict[str, str],
+    current_files: set[str],
+    final_files: set[str],
+) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
+    rewrites: list[dict[str, Any]] = []
+    new_broken: list[dict[str, Any]] = []
+
+    def rewrite_target(raw_target: str, *, wikilink: bool = False) -> str:
+        split = _split_local_link_target(raw_target)
+        if split is None:
+            return raw_target
+        raw_path, fragment, angled = split
+        resolution = _resolve_local_link_path(config, document_path, raw_path, current_files)
+        if resolution is None:
+            return raw_target
+        resolved, decoded, root_style, vault_style = resolution
+        existed_before = resolved in current_files
+        final_target = move_map.get(resolved, resolved)
+        if not existed_before and resolved not in move_map:
+            return raw_target
+        omitted_suffix = not decoded.lower().endswith(".md")
+        rendered_path = _render_rebased_link_path(
+            final_document_path,
+            final_target,
+            decoded,
+            root_style,
+            vault_style,
+            omitted_suffix,
+        )
+        if "%" in raw_path and not wikilink:
+            rendered_path = quote(rendered_path, safe="/.-_~")
+        rendered = f"{rendered_path}{fragment}"
+        if angled and not wikilink:
+            rendered = f"<{rendered}>"
+        if final_target not in final_files and existed_before:
+            new_broken.append(
+                {
+                    "document": final_document_path,
+                    "target": raw_target,
+                    "resolved_target": final_target,
+                }
+            )
+        if rendered != raw_target:
+            rewrites.append(
+                {
+                    "from": raw_target,
+                    "to": rendered,
+                    "target_before": resolved,
+                    "target_after": final_target,
+                }
+            )
+        return rendered
+
+    def markdown_replacer(match: re.Match[str]) -> str:
+        return f"{match.group('prefix')}{rewrite_target(match.group('target'))}{match.group('suffix')}"
+
+    updated = MARKDOWN_LINK_PATTERN.sub(markdown_replacer, content)
+
+    def reference_replacer(match: re.Match[str]) -> str:
+        return f"{match.group('prefix')}{rewrite_target(match.group('target'))}{match.group('suffix')}"
+
+    updated = REFERENCE_LINK_PATTERN.sub(reference_replacer, updated)
+
+    def wikilink_replacer(match: re.Match[str]) -> str:
+        target = match.group("target")
+        rewritten = rewrite_target(target, wikilink=True)
+        return f"[[{rewritten}{match.group('label') or ''}]]"
+
+    updated = WIKILINK_PATTERN.sub(wikilink_replacer, updated)
+
+    def redirect_replacer(match: re.Match[str]) -> str:
+        target = match.group("target")
+        rewritten = move_map.get(target, target)
+        if rewritten != target:
+            rewrites.append({"from": target, "to": rewritten, "target_before": target, "target_after": rewritten})
+        return f"{match.group('prefix')}{match.group('quote')}{rewritten}{match.group('quote')}{match.group('suffix')}"
+
+    updated = REDIRECT_PATH_PATTERN.sub(redirect_replacer, updated)
+    return updated, rewrites, new_broken
+
+
+def propose_area_layout(config: Config, area: str | None = None, global_scope: bool = False) -> dict[str, Any]:
+    if global_scope == bool(area):
+        raise FundusError("Choose exactly one of an explicit area or global scope.", "AREA_LAYOUT_SCOPE_INVALID")
+    selected_area = area_scope(area).path if area else None
+    root = fundus_root_dir(config)
+    files = active_fundus_files(config)
+    markdown_paths = [path for path in files if path.suffix.lower() == ".md"]
+    raw_counts: dict[str, int] = {}
+    for path in markdown_paths:
+        parts = path.relative_to(root).parts
+        if len(parts) >= 4 and parts[0] in AREA_ROOT_DIRNAMES and parts[2] in SOURCE_AREA_SUBDIRECTORIES:
+            area_path = "/".join(parts[:2])
+            raw_counts[area_path] = raw_counts.get(area_path, 0) + 1
+
+    move_candidates: list[tuple[Path, Path]] = []
+    for path in markdown_paths:
+        parts = path.relative_to(root).parts
+        path_area = "/".join(parts[:2]) if len(parts) >= 2 and parts[0] in AREA_ROOT_DIRNAMES else None
+        if selected_area and path_area != selected_area:
+            continue
+        destination = area_layout_destination(config, path, raw_counts)
+        if destination is not None and destination != path:
+            move_candidates.append((path, destination))
+
+    source_paths = {str(source.relative_to(config.vault_path)) for source, _ in move_candidates}
+    destination_sources: dict[str, list[str]] = {}
+    for source, destination in move_candidates:
+        destination_key = str(destination.relative_to(config.vault_path))
+        destination_sources.setdefault(destination_key, []).append(str(source.relative_to(config.vault_path)))
+    current_file_paths = {str(path.relative_to(config.vault_path)) for path in files}
+    collisions: list[dict[str, Any]] = []
+    for destination, sources in sorted(destination_sources.items()):
+        if len(sources) > 1:
+            collisions.append({"destination": destination, "sources": sorted(sources), "reason": "duplicate_destination"})
+        if destination in current_file_paths and destination not in source_paths:
+            collisions.append({"destination": destination, "sources": sorted(sources), "reason": "destination_exists"})
+
+    move_map = {
+        str(source.relative_to(config.vault_path)): str(destination.relative_to(config.vault_path))
+        for source, destination in move_candidates
+    }
+    final_file_paths = (current_file_paths - set(move_map)) | set(move_map.values())
+    moves: list[dict[str, Any]] = []
+    rewrites: list[dict[str, Any]] = []
+    all_link_rewrites: list[dict[str, Any]] = []
+    new_broken_links: list[dict[str, Any]] = []
+    for source, destination in sorted(move_candidates, key=lambda item: str(item[0])):
+        doc = load_document(source, config.vault_path)
+        moves.append(
+            {
+                "source": str(source.relative_to(config.vault_path)),
+                "destination": str(destination.relative_to(config.vault_path)),
+                "expected_revision": path_revision(source),
+                "stable_id": doc.frontmatter.get("id"),
+            }
+        )
+
+    for path in markdown_paths:
+        path_key = str(path.relative_to(config.vault_path))
+        final_path = move_map.get(path_key, path_key)
+        content = read_note_text(path)
+        updated, link_rewrites, broken = rewrite_layout_links(
+            config,
+            content,
+            path_key,
+            final_path,
+            move_map,
+            current_file_paths,
+            final_file_paths,
+        )
+        if updated != content:
+            rewrites.append(
+                {
+                    "source": path_key,
+                    "destination": final_path,
+                    "expected_revision": path_revision(path),
+                    "content": updated,
+                    "replacement_count": len(link_rewrites),
+                }
+            )
+            all_link_rewrites.extend({"document": path_key, **item} for item in link_rewrites)
+        new_broken_links.extend(broken)
+
+    request = {
+        "policy_version": AREA_LAYOUT_POLICY_VERSION,
+        "source_threshold": AREA_LAYOUT_SOURCE_THRESHOLD,
+        "selection": {"global": global_scope, "area": selected_area},
+        "moves": moves,
+        "rewrites": rewrites,
+        "collisions": collisions,
+        "new_broken_links": new_broken_links,
+    }
+    return {
+        "proposal_version": 1,
+        "kind": "area-layout",
+        "proposal_id": proposal_digest("area-layout", request),
+        "request": request,
+        "move_count": len(moves),
+        "rewrite_document_count": len(rewrites),
+        "link_rewrite_count": len(all_link_rewrites),
+        "moves": moves,
+        "link_rewrites": all_link_rewrites,
+        "collisions": collisions,
+        "new_broken_links": new_broken_links,
+        "warnings": (["AREA_LAYOUT_COLLISION"] if collisions else [])
+        + (["AREA_LAYOUT_NEW_BROKEN_LINK"] if new_broken_links else []),
+    }
+
+
+def _area_layout_path(config: Config, path_arg: str) -> Path:
+    path = ensure_within(fundus_root_dir(config), config.vault_path / path_arg, code="AREA_LAYOUT_PATH_INVALID")
+    if path.suffix.lower() != ".md" or ARCHIVE_DIRNAME in path.relative_to(fundus_root_dir(config)).parts:
+        raise FundusError(f"Area layout path is not an active Markdown document: {path_arg}", "AREA_LAYOUT_PATH_INVALID")
+    return path
+
+
+@serialized_mutation
+def apply_area_layout_proposal(config: Config, proposal: dict[str, Any]) -> dict[str, Any]:
+    if proposal.get("kind") != "area-layout" or not isinstance(proposal.get("request"), dict):
+        raise FundusError("Expected an area-layout proposal.", "PROPOSAL_INVALID")
+    request = dict(proposal["request"])
+    if proposal.get("proposal_id") != proposal_digest("area-layout", request):
+        raise FundusError("Area-layout proposal integrity check failed.", "PROPOSAL_INVALID")
+    selection = request.get("selection")
+    if not isinstance(selection, dict):
+        raise FundusError("Area-layout proposal selection is invalid.", "PROPOSAL_INVALID")
+    regenerated = propose_area_layout(
+        config,
+        str(selection["area"]) if selection.get("area") else None,
+        bool(selection.get("global")),
+    )
+    if regenerated["proposal_id"] != proposal["proposal_id"]:
+        raise FundusError("Area-layout proposal no longer matches current state.", "REVISION_CONFLICT")
+    if regenerated["collisions"]:
+        raise FundusError("Area-layout proposal contains destination collisions.", "AREA_LAYOUT_COLLISION")
+    if regenerated["new_broken_links"]:
+        raise FundusError("Area-layout proposal would introduce broken local links.", "AREA_LAYOUT_LINK_INVALID")
+
+    moves = list(request.get("moves") or [])
+    rewrites = list(request.get("rewrites") or [])
+    move_by_source = {str(item["source"]): item for item in moves}
+    rewrite_by_source = {str(item["source"]): item for item in rewrites}
+    touched_paths: set[Path] = {index_path(config)}
+    for item in moves:
+        source = _area_layout_path(config, str(item["source"]))
+        destination = _area_layout_path(config, str(item["destination"]))
+        assert_expected_revision(source, str(item["expected_revision"]))
+        if destination.exists() and destination != source:
+            raise FundusError(f"Area-layout destination already exists: {item['destination']}", "AREA_LAYOUT_COLLISION")
+        touched_paths.update({source, destination})
+    for item in rewrites:
+        source = _area_layout_path(config, str(item["source"]))
+        assert_expected_revision(source, str(item["expected_revision"]))
+        touched_paths.add(source)
+        touched_paths.add(_area_layout_path(config, str(item["destination"])))
+
+    backup = create_backup(config, f"pre-area-layout-{str(proposal['proposal_id']).split(':')[-1][:12]}")
+    backup_verification = verify_backup(config, str(backup["id"]))
+    removed_directories: list[str] = []
+    with MutationJournal(config, "area-layout", list(touched_paths)):
+        for source_key, item in sorted(move_by_source.items()):
+            source = _area_layout_path(config, source_key)
+            destination = _area_layout_path(config, str(item["destination"]))
+            rewrite = rewrite_by_source.get(source_key)
+            content = str(rewrite["content"]).encode("utf-8") if rewrite else source.read_bytes()
+            atomic_write_bytes(destination, content)
+        mutation_checkpoint("area-layout", "destinations_written")
+
+        for item in rewrites:
+            source_key = str(item["source"])
+            if source_key in move_by_source:
+                continue
+            atomic_write(_area_layout_path(config, source_key), str(item["content"]))
+        mutation_checkpoint("area-layout", "backlinks_written")
+
+        for source_key in sorted(move_by_source, reverse=True):
+            _area_layout_path(config, source_key).unlink()
+        mutation_checkpoint("area-layout", "sources_removed")
+
+        pure_move_count = 0
+        for source_key, item in sorted(move_by_source.items()):
+            destination = _area_layout_path(config, str(item["destination"]))
+            stable_id = load_document(destination, config.vault_path).frontmatter.get("id")
+            if stable_id != item.get("stable_id"):
+                raise FundusError(f"Stable id changed while moving {source_key}.", "AREA_LAYOUT_ID_CHANGED")
+            if source_key not in rewrite_by_source:
+                if path_revision(destination) != item["expected_revision"]:
+                    raise FundusError(f"Pure move changed document bytes for {source_key}.", "AREA_LAYOUT_BYTES_CHANGED")
+                pure_move_count += 1
+
+        legacy_directories = {
+            _area_layout_path(config, str(item["source"])).parent
+            for item in moves
+        }
+        for directory in sorted(legacy_directories, key=lambda path: len(path.parts), reverse=True):
+            if remove_empty_directory(directory, {fundus_root_dir(config)}):
+                removed_directories.append(str(directory.relative_to(config.vault_path)))
+
+        index_payload = rebuild_index(config)
+        verification = verify_fundus_corpus(config)
+        if not verification["passed"]:
+            raise FundusError(
+                f"Area-layout migration failed corpus verification: {verification['issues']}",
+                "AREA_LAYOUT_VERIFY_FAILED",
+            )
+        mutation_checkpoint("area-layout", "verified")
+
+    return {
+        "proposal_id": proposal["proposal_id"],
+        "applied": True,
+        "move_count": len(moves),
+        "pure_move_count": pure_move_count,
+        "rewrite_document_count": len(rewrites),
+        "link_rewrite_count": regenerated["link_rewrite_count"],
+        "removed_directories": sorted(removed_directories),
+        "backup": {
+            "id": backup["id"],
+            "file_count": backup["file_count"],
+            "byte_count": backup["byte_count"],
+            "verified": backup_verification["verified"],
+        },
+        "index": {
+            "path": str(index_path(config).relative_to(config.vault_path)),
+            "documents": len(index_payload["documents"]),
+        },
+        "verification": verification,
+        "link_verification": {"new_broken_links": [], "rewritten_links": regenerated["link_rewrite_count"]},
     }
 
 
@@ -4217,12 +4655,21 @@ def build_parser() -> argparse.ArgumentParser:
     backup_restore_parser.add_argument("--id", required=True, help="Backup id returned by backup create or backup list.")
     backup_restore_parser.add_argument("--apply", action="store_true", help="Apply the restore after verification and a safety backup.")
 
-    area_parser = subparsers.add_parser("area", help="Initialize explicit cross-repository Fundus areas.")
+    area_parser = subparsers.add_parser("area", help="Initialize and simplify explicit cross-repository Fundus areas.")
     area_subparsers = area_parser.add_subparsers(dest="area_command", required=True)
-    area_init_parser = area_subparsers.add_parser("init", help="Create a safe area skeleton without overwriting existing files.")
+    area_init_parser = area_subparsers.add_parser("init", help="Create a lean area without overwriting existing files.")
     area_init_parser.add_argument("--area", required=True, help="Area path under the Fundus root.")
     area_init_parser.add_argument("--type", dest="area_type", default="Area", help="Overview document type. Default: Area.")
     area_init_parser.add_argument("--title", required=True, help="Human area title.")
+    area_init_parser.add_argument("--with-index", action="store_true", help="Also create an optional curated index.md.")
+    area_init_parser.add_argument("--with-log", action="store_true", help="Also create an optional chronological log.md.")
+    area_layout_parser = area_subparsers.add_parser("layout", help="Plan or apply a lean, link-safe area layout migration.")
+    area_layout_subparsers = area_layout_parser.add_subparsers(dest="area_layout_command", required=True)
+    area_layout_plan_parser = area_layout_subparsers.add_parser("plan", help="Create a deterministic layout proposal without writing.")
+    area_layout_plan_parser.add_argument("--area", help="Limit the plan to one explicit Fundus area.")
+    area_layout_plan_parser.add_argument("--global", dest="global_scope", action="store_true", help="Plan across all Fundus areas.")
+    area_layout_apply_parser = area_layout_subparsers.add_parser("apply", help="Apply one exact fresh layout proposal.")
+    area_layout_apply_parser.add_argument("--proposal-file", required=True, help="JSON proposal emitted by area layout plan.")
 
     index_parser = subparsers.add_parser("index", help="Manage the lightweight Fundus search index.")
     index_subparsers = index_parser.add_subparsers(dest="index_command", required=True)
@@ -4517,9 +4964,24 @@ def main() -> int:
 
         if args.command == "area":
             if args.area_command == "init":
-                payload = area_init(config, project_name, args.area, args.area_type, args.title)
+                payload = area_init(
+                    config,
+                    project_name,
+                    args.area,
+                    args.area_type,
+                    args.title,
+                    args.with_index,
+                    args.with_log,
+                )
                 print(json.dumps(payload, indent=2))
                 return 0
+            if args.area_command == "layout":
+                if args.area_layout_command == "plan":
+                    print(json.dumps(propose_area_layout(config, args.area, args.global_scope), indent=2))
+                    return 0
+                if args.area_layout_command == "apply":
+                    print(json.dumps(apply_area_layout_proposal(config, load_json(Path(args.proposal_file))), indent=2))
+                    return 0
 
         if args.command == "index":
             if args.index_command == "rebuild":
