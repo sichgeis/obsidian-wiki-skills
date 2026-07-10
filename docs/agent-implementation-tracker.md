@@ -1322,21 +1322,21 @@ Use the verified proposal-first workflow to simplify the authorized live Fundus 
 ### Required implementation
 
 - [x] Record the final live inventory and deterministic proposal without mutating the vault.
-- [ ] Create and verify a new current backup immediately before apply.
+- [x] Create and verify a new current backup immediately before apply.
 - [x] Rehearse the exact structural policy and semantic consolidation rules against a disposable vault copy.
-- [ ] Apply the approved area matrix from `docs/area-layout-migration.md` through Fundus operations, never direct Markdown writes.
-- [ ] Consolidate the AI Agent Templates and Configuration Promotion epics without losing unique facts, provenance, stable links, or source material.
-- [ ] Verify active/archive counts, stable IDs, corpus invariants, search, index freshness, all rewritten links, and no newly broken local links.
-- [ ] Create or update the durable Fundus production note through proposal/apply and record backup, proposal, verification, and rollback evidence.
-- [ ] Update version and release notes to 0.2.3 only after the live migration succeeds.
+- [x] Apply the approved area matrix from `docs/area-layout-migration.md` through Fundus operations, never direct Markdown writes.
+- [x] Consolidate the AI Agent Templates and Configuration Promotion epics without losing unique facts, provenance, stable links, or source material.
+- [x] Verify active/archive counts, stable IDs, corpus invariants, search, index freshness, all rewritten links, and no newly broken local links.
+- [x] Create or update the durable Fundus production note through proposal/apply and record backup, proposal, verification, and rollback evidence.
+- [x] Update version and release notes to 0.2.3 only after the live migration succeeds.
 - [ ] Run `task verify`, build and inspect the package, install through the cache-buster workflow, and run a fresh-host smoke against a disposable vault.
 - [ ] Commit and push every stage, create and push annotated tag `v0.2.3`, and leave the dedicated branch clean and reviewable without merging it into `main`.
 
 ### Acceptance criteria
 
-- [ ] The live vault matches the approved lean target matrix and retains all intended knowledge.
-- [ ] A verified pre-apply backup and an actionable rollback point exist.
-- [ ] Live corpus, index, search, and link checks pass after migration.
+- [x] The live vault matches the approved lean target matrix and retains all intended knowledge.
+- [x] A verified pre-apply backup and an actionable rollback point exist.
+- [x] Live corpus, index, search, and link checks pass after migration.
 - [ ] Source, build, marketplace, installed cache, MCP server info, README, and release notes all report 0.2.3.
 - [ ] The installed plugin passes the disposable-vault host smoke and the release branch/tag are pushed.
 
@@ -1349,6 +1349,16 @@ Use the verified proposal-first workflow to simplify the authorized live Fundus 
 - Final rehearsal counts were 156 active, 63 archived, 32 reserved, and 124 active concepts. Corpus verification passed with no issues and the 219-document index was current.
 - AI Agent Templates ended with four canonical concept files (`overview.md`, `domain.md`, `implementation.md`, `sources.md`) plus its existing curated `index.md` and `log.md`. Configuration Promotion ended with three root concepts, five files under `sources/`, and its existing curated reserved files.
 - Active-link searches found no surviving link to an absorbed or superseded structural path. Provenance strings and stable IDs deliberately retain historical path vocabulary.
+
+### Live migration evidence — 2026-07-10
+
+- The final live proposal was byte-identical to the rehearsal proposal immediately before apply.
+- Explicit rollback backup `20260710T234428162020+0200-pre-fundus-0-2-3-lean-areas` and apply backup `20260710T234443354327+0200-pre-area-layout-4579f48579e4` both contain 220 files / 3,925,588 bytes and pass checksum verification.
+- Live structural apply matched rehearsal: 26 moves, four absorptions, 18 pure byte-identical moves, 25 rewritten documents, 103 link rewrites, zero broken links, and a current index.
+- The four semantic merges were applied through revision-bound Fundus update proposals; all duplicate candidates were reviewed, target inclusion was verified, and original notes were archived through Fundus.
+- Post-curation corpus verification passed at 219 documents (156 active, 63 archived). The durable production record was then created through proposal/apply, producing the final 220-document corpus (157 active, 63 archived, 32 reserved, 125 active concepts) with a current index and no issues.
+- Durable record: `Fundus/Operations/Fundus Production/fundus-0-2-3-lean-area-migration.md` at creation revision `sha256:41b214e82d04c823df3b26d372fccea43d10f1826f0c81c0a86600bb060063e2`.
+- A follow-up global layout plan is idempotent: zero moves, absorptions, rewrites, collisions, warnings, or new broken links.
 
 ---
 

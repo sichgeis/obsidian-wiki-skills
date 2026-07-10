@@ -461,7 +461,7 @@ Fundus is licensed under the MIT License. The vendored `ruamel.yaml` 0.19.1 depe
 
 GitHub Actions runs the full suite on Python 3.11, 3.12, and 3.13 on Linux plus a Python 3.13 macOS compatibility job. A separate package job runs `task verify`, the exact packaged MCP integration, the artifact privacy scan, and the 2,000-note performance gate, then uploads the JSON performance report.
 
-The plugin manifest is the version source. Build and verification propagate and compare that version across the built manifest, runtime MCP `serverInfo`, local marketplace metadata, marketplace plugin copy, and the matching section in `RELEASE_NOTES.md`. The current release is 0.2.2.
+The plugin manifest is the version source. Build and verification propagate and compare that version across the built manifest, runtime MCP `serverInfo`, local marketplace metadata, marketplace plugin copy, and the matching section in `RELEASE_NOTES.md`. The current release is 0.2.3.
 
 ## Update Workflow
 

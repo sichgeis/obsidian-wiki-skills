@@ -1,5 +1,19 @@
 # Fundus release notes
 
+## 0.2.3 — 2026-07-10
+
+Fundus 0.2.3 is the lean-area and link-safe curation patch for the 0.2 release line.
+
+- Makes new areas content-driven: `area init` creates only `overview.md` by default, with explicit `--with-index` and `--with-log` options and no empty category folders.
+- Adds deterministic `area layout plan` and exact `area layout apply` administration with revision binding, collision reporting, verified current backups, mutation journaling, rollback, index rebuild, and corpus verification.
+- Rebases links inside moved notes and rewrites active backlinks while preserving labels, anchors, titles, stable IDs, and exact bytes for pure moves.
+- Supports curated move and absorption manifests so an agent can select canonical notes, rewrite inbound links, merge complete source bodies through normal update proposals, and archive reviewed sources safely.
+- Documents that the former seven-folder scaffold was a Fundus convention rather than an Open Knowledge Format requirement; typed concepts now normally live at the area root and larger raw-evidence sets use `sources/`.
+- Migrates the authorized live Fundus vault with two independently verified 220-file rollback backups. The curated migration performed 26 moves, four semantic absorptions, and 103 link rewrites with no collision, corpus issue, stale index entry, or newly broken link.
+- Curates AI Agent Templates to four canonical concept notes and Configuration Promotion to three root concepts plus five raw sources while retaining both areas' useful `index.md` and `log.md` files.
+
+After reinstalling with `task install`, start a fresh Codex task so the 0.2.3 skill and runtime are loaded.
+
 ## 0.2.2 — 2026-07-10
 
 Fundus 0.2.2 is the complete-read correctness patch for the 0.2 release line.
