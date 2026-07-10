@@ -2639,6 +2639,130 @@ def render_existing_document_preserving_body(frontmatter: dict[str, Any], body: 
     return f"{format_frontmatter(frontmatter)}{frontmatter_newline(frontmatter)}{body}"
 
 
+LEGACY_PLAIN_SCALAR_REPAIR_FIELDS = {"title", "archived_reason"}
+
+
+def legacy_frontmatter_repair_plan(config: Config, path: Path) -> dict[str, Any] | None:
+    safe_path = resolve_fundus_note_path(config, str(path))
+    text = read_note_text(safe_path)
+    try:
+        parse_frontmatter(text)
+        return None
+    except FundusError as exc:
+        original_error = str(exc)
+
+    opening = re.match(r"\A(?P<bom>\ufeff?)---[ \t]*(?P<newline>\r\n|\n)", text)
+    if opening is None:
+        return None
+    remainder = text[opening.end() :]
+    closing = re.search(r"(?m)^---[ \t]*(?:\r\n|\n|$)", remainder)
+    if closing is None:
+        return {
+            "path": str(safe_path.relative_to(config.vault_path)),
+            "repairable": False,
+            "applied": False,
+            "error": original_error,
+            "changes": [],
+        }
+
+    raw_frontmatter = remainder[: closing.start()]
+    repaired_lines: list[str] = []
+    changes: list[dict[str, str]] = []
+    line_pattern = re.compile(
+        rf"^(?P<key>{'|'.join(sorted(LEGACY_PLAIN_SCALAR_REPAIR_FIELDS))}):(?P<spacing>[ \t]+)(?P<value>.*?)(?P<newline>\r\n|\n)?$"
+    )
+    for line in raw_frontmatter.splitlines(keepends=True):
+        match = line_pattern.match(line)
+        if match is None:
+            repaired_lines.append(line)
+            continue
+        value = match.group("value")
+        stripped_value = value.lstrip()
+        if (
+            ": " not in value
+            or not stripped_value
+            or not stripped_value[0].isalnum()
+            or re.search(r"[ \t]#", value)
+        ):
+            repaired_lines.append(line)
+            continue
+        quoted = json.dumps(value, ensure_ascii=False)
+        repaired_lines.append(
+            f"{match.group('key')}:{match.group('spacing')}{quoted}{match.group('newline') or ''}"
+        )
+        changes.append({"key": match.group("key"), "before": value, "after": quoted})
+
+    candidate = text[: opening.end()] + "".join(repaired_lines) + remainder[closing.start() :]
+    repair_error = original_error
+    repairable = False
+    if changes:
+        try:
+            candidate_frontmatter, candidate_body = parse_frontmatter(candidate)
+            original_body = remainder[closing.end() :]
+            if candidate_body != original_body:
+                raise FundusError("Legacy frontmatter repair would change the note body.", "FRONTMATTER_REPAIR_UNSAFE")
+            for change in changes:
+                if candidate_frontmatter.get(change["key"]) != change["before"]:
+                    raise FundusError(
+                        f"Legacy frontmatter repair would reinterpret {change['key']}.",
+                        "FRONTMATTER_REPAIR_UNSAFE",
+                    )
+            repairable = True
+            repair_error = ""
+        except FundusError as exc:
+            repair_error = str(exc)
+
+    return {
+        "path": str(safe_path.relative_to(config.vault_path)),
+        "repairable": repairable,
+        "applied": False,
+        "error": repair_error,
+        "changes": changes,
+        "body_sha256": hashlib.sha256(remainder[closing.end() :].encode("utf-8")).hexdigest(),
+        "previous_revision": path_revision(safe_path),
+        "_candidate": candidate,
+        "_path": safe_path,
+    }
+
+
+@serialized_mutation_when(lambda config, apply=False: apply)
+def repair_legacy_frontmatter(config: Config, apply: bool = False) -> dict[str, Any]:
+    root = fundus_root_dir(config)
+    paths = [
+        path
+        for path in sorted(root.rglob("*.md"))
+        if path.name not in RESERVED_FILENAMES
+        and BACKUP_DIRNAME not in path.relative_to(root).parts
+        and JOURNAL_DIRNAME not in path.relative_to(root).parts
+    ]
+    plans = [plan for path in paths if (plan := legacy_frontmatter_repair_plan(config, path)) is not None]
+    repairable = [plan for plan in plans if plan["repairable"]]
+
+    if apply and repairable:
+        journal_paths = [plan["_path"] for plan in repairable]
+        journal_paths.append(index_path(config))
+        with MutationJournal(config, "legacy-frontmatter-repair", journal_paths):
+            for plan in repairable:
+                atomic_write(plan["_path"], plan["_candidate"])
+                refresh_index_entry(config, plan["_path"])
+                mutation_checkpoint("legacy-frontmatter-repair", plan["path"])
+                plan["applied"] = True
+
+    documents = [
+        {key: value for key, value in plan.items() if not key.startswith("_")}
+        for plan in plans
+    ]
+    return {
+        "apply": apply,
+        "scanned_documents": len(paths),
+        "invalid_count": len(plans),
+        "repairable_count": len(repairable),
+        "unrepairable_count": len(plans) - len(repairable),
+        "applied_count": sum(bool(plan["applied"]) for plan in plans),
+        "documents": documents,
+    }
+
+
 @serialized_mutation_when(lambda config, path, apply=False, add_missing=False, expected_revision=None: apply)
 def normalize_frontmatter_for_path(
     config: Config,
@@ -2765,6 +2889,9 @@ def normalize_frontmatter_paths(
         paths = markdown_paths_for_scope(config, scope, include_archived)
         scope_name = scope.kind
         scope_path = scope.path
+
+    if not path_arg:
+        paths = [path for path in paths if path.name not in RESERVED_FILENAMES]
 
     if limit is not None:
         paths = paths[:limit]
@@ -3513,18 +3640,31 @@ def verify_fundus_corpus(config: Config, destination_dir: str | None = None) -> 
             continue
         archived = relative_parts and relative_parts[0] == ARCHIVE_DIRNAME
         reserved = not archived and path.name in RESERVED_FILENAMES
-        frontmatter, _ = parse_frontmatter(read_note_text(path))
         relative_path = str(path.relative_to(verify_config.vault_path))
 
         counts["markdown"] += 1
         counts["archive" if archived else "active"] += 1
         if reserved:
             counts["reserved"] += 1
+        elif not archived:
+            counts["concept"] += 1
+        try:
+            frontmatter, _ = parse_frontmatter(read_note_text(path))
+        except FundusError as exc:
+            issues.append(
+                {
+                    "path": relative_path,
+                    "reason": "frontmatter_invalid",
+                    "code": exc.code,
+                    "error": str(exc),
+                }
+            )
+            continue
+        if reserved:
             if frontmatter:
                 issues.append({"path": relative_path, "reason": "reserved_has_frontmatter"})
             continue
         if not archived:
-            counts["concept"] += 1
             if not frontmatter:
                 issues.append({"path": relative_path, "reason": "concept_missing_frontmatter"})
             elif not str(frontmatter.get("type") or "").strip():
@@ -3566,14 +3706,19 @@ def verify_fundus_corpus(config: Config, destination_dir: str | None = None) -> 
     smoke_tests: list[dict[str, Any]] = []
     for name, query, label, scope, include_archived in smoke_specs:
         selected_scope = scope or project_scope(label)
-        results = scan_documents(
-            verify_config,
-            label,
-            query,
-            limit=3,
-            include_archived=include_archived,
-            scope=selected_scope,
-        )
+        smoke_error = None
+        try:
+            results = scan_documents(
+                verify_config,
+                label,
+                query,
+                limit=3,
+                include_archived=include_archived,
+                scope=selected_scope,
+            )
+        except FundusError as exc:
+            results = []
+            smoke_error = {"code": exc.code, "error": str(exc)}
         smoke_tests.append(
             {
                 "name": name,
@@ -3584,6 +3729,7 @@ def verify_fundus_corpus(config: Config, destination_dir: str | None = None) -> 
                 "found": bool(results),
                 "result_count": len(results),
                 "paths": [result.get("path") for result in results],
+                "error": smoke_error,
             }
         )
 
@@ -3898,6 +4044,16 @@ def build_parser() -> argparse.ArgumentParser:
     normalize_frontmatter_parser.add_argument("--apply", action="store_true", help="Write changes. Without this flag, the command only reports planned changes.")
     normalize_frontmatter_parser.add_argument("--limit", type=int, help="Limit the number of documents processed for scoped or global dry-runs.")
 
+    repair_frontmatter_parser = subparsers.add_parser(
+        "repair-frontmatter",
+        help="Dry-run or repair narrowly recognized legacy plain-scalar YAML errors without changing note bodies.",
+    )
+    repair_frontmatter_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply repairable legacy scalar quoting changes. Without this flag, report only.",
+    )
+
     move_parser = subparsers.add_parser("move", help="Move one Fundus note to another active Fundus path for later curation workflows.")
     move_parser.add_argument("--from", dest="source", required=True, help="Source Fundus document path relative to the vault root.")
     move_parser.add_argument("--to", dest="destination", required=True, help="Destination Fundus document path relative to the vault root.")
@@ -4171,6 +4327,10 @@ def main() -> int:
                 args.limit,
             )
             print(json.dumps(payload, indent=2))
+            return 0
+
+        if args.command == "repair-frontmatter":
+            print(json.dumps(repair_legacy_frontmatter(config, args.apply), indent=2))
             return 0
 
         if args.command == "move":

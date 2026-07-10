@@ -128,6 +128,15 @@ python /path/to/fundus/scripts/fundus.py migrate wiki-to-fundus \
 
 ## Frontmatter
 
+Inspect legacy plain-scalar YAML errors before normalization:
+
+```bash
+python /path/to/fundus/scripts/fundus.py repair-frontmatter
+python /path/to/fundus/scripts/fundus.py repair-frontmatter --apply
+```
+
+The repair is deliberately narrow: it quotes only unambiguous legacy `title` and `archived_reason` text containing `: `. Dry-run is the default. Ambiguous YAML is reported but never rewritten, and note bodies remain unchanged.
+
 ```bash
 python /path/to/fundus/scripts/fundus.py normalize-frontmatter --path "Fundus/my-project/legacy-note.md"
 python /path/to/fundus/scripts/fundus.py normalize-frontmatter --path "Fundus/my-project/legacy-note.md" --apply

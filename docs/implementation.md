@@ -102,6 +102,8 @@ Current precedence is:
 
 The packaged `config.json` contains no vault path. A caller must select a vault through one of the higher-precedence sources. `doctor` reports provenance per resolved value plus the Python executable and runtime/plugin root.
 
+Legacy corpus preparation uses `repair-frontmatter` before normalization. The repair recognizes only unambiguous plain-text `title` and `archived_reason` values whose unquoted colon made old YAML invalid; it is dry-run-first, atomic, journaled, and body preserving. Verification records malformed paths individually, and bulk normalization excludes reserved `index.md` and `log.md` files.
+
 ### Current search
 
 The index is:

@@ -1160,6 +1160,70 @@ class NormalizeFrontmatterTest(FundusTestCase):
         self.assertEqual(frontmatter["scope_path"], "demo")
         self.assertEqual(body, "# Plain Note\n\nBody\n")
 
+    def test_global_normalize_skips_reserved_files(self) -> None:
+        self.write_legacy_note("Fundus/demo/article.md")
+        reserved_root = self.vault_path / "Fundus" / "demo"
+        (reserved_root / "index.md").write_text("# Index\n")
+        (reserved_root / "log.md").write_text("# Log\n")
+
+        result = fundus.normalize_frontmatter_paths(
+            self.config,
+            "demo",
+            fundus.project_scope("demo"),
+            global_scope=True,
+        )
+
+        self.assertEqual(result["document_count"], 1)
+        self.assertEqual(result["changed_count"], 1)
+        self.assertEqual(result["documents"][0]["path"], "Fundus/demo/article.md")
+        self.assertEqual((reserved_root / "index.md").read_text(), "# Index\n")
+        self.assertEqual((reserved_root / "log.md").read_text(), "# Log\n")
+
+
+class LegacyFrontmatterRepairTest(FundusTestCase):
+    def test_repair_is_narrow_dry_run_first_and_body_preserving(self) -> None:
+        active = self.vault_path / "Fundus" / "demo" / "ticket.md"
+        active.parent.mkdir(parents=True, exist_ok=True)
+        active.write_bytes(
+            b"---\r\ntitle: BACKEND-1: Broken title\r\ntags: [fundus]\r\n---\r\n\r\n# Body\r\n\r\nKeep me.  \r\n"
+        )
+        archived = self.vault_path / "Fundus" / "_archive" / "demo" / "old.md"
+        archived.parent.mkdir(parents=True)
+        archived.write_text(
+            "---\n"
+            "title: Old\n"
+            "archived_reason: weekly cleanup: stale note\n"
+            "---\n\n# Old\n\nArchive body.\n"
+        )
+        unsupported = self.vault_path / "Fundus" / "demo" / "nested.md"
+        unsupported.write_text("---\nnested:\n  child: value\n---\n\n# Nested\n")
+        unsafe_flow = self.vault_path / "Fundus" / "demo" / "flow.md"
+        unsafe_flow.write_text("---\ntitle: {unsafe: mapping}\n---\n\n# Flow\n")
+        original_active = active.read_bytes()
+        original_archived = archived.read_bytes()
+        original_unsupported = unsupported.read_bytes()
+
+        dry_run = fundus.repair_legacy_frontmatter(self.config)
+
+        self.assertEqual(dry_run["invalid_count"], 4)
+        self.assertEqual(dry_run["repairable_count"], 2)
+        self.assertEqual(dry_run["unrepairable_count"], 2)
+        self.assertEqual(dry_run["applied_count"], 0)
+        self.assertEqual(active.read_bytes(), original_active)
+        self.assertEqual(archived.read_bytes(), original_archived)
+
+        applied = fundus.repair_legacy_frontmatter(self.config, apply=True)
+
+        self.assertEqual(applied["applied_count"], 2)
+        active_frontmatter, active_body = fundus.parse_frontmatter(active.read_bytes().decode("utf-8"))
+        archive_frontmatter, archive_body = fundus.parse_frontmatter(archived.read_text())
+        self.assertEqual(active_frontmatter["title"], "BACKEND-1: Broken title")
+        self.assertEqual(archive_frontmatter["archived_reason"], "weekly cleanup: stale note")
+        self.assertEqual(active_body, "\r\n# Body\r\n\r\nKeep me.  \r\n")
+        self.assertEqual(archive_body, "\n# Old\n\nArchive body.\n")
+        self.assertEqual(unsupported.read_bytes(), original_unsupported)
+        self.assertFalse(fundus.journal_root_dir(self.config).exists())
+
 
 class BackupTest(FundusTestCase):
     def test_backup_create_list_and_inspect_manifest(self) -> None:
@@ -1778,6 +1842,18 @@ class MigrationTest(FundusTestCase):
 
         self.assertFalse(verification["passed"])
         self.assertEqual(verification["issues"][0]["reason"], "reserved_has_frontmatter")
+
+    def test_verify_fundus_corpus_reports_invalid_frontmatter_path_without_aborting(self) -> None:
+        path = self.vault_path / "Fundus" / "demo" / "broken.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("---\ntitle: Broken: title\n---\n\n# Body\n")
+
+        verification = fundus.verify_fundus_corpus(self.config)
+
+        issue = next(issue for issue in verification["issues"] if issue["path"] == "Fundus/demo/broken.md")
+        self.assertFalse(verification["passed"])
+        self.assertEqual(issue["reason"], "frontmatter_invalid")
+        self.assertEqual(issue["code"], "FRONTMATTER_INVALID")
 
 
 class ScopeAndAreaTest(FundusTestCase):

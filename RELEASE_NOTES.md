@@ -1,5 +1,15 @@
 # Fundus release notes
 
+## 0.2.1 — 2026-07-10
+
+Fundus 0.2.1 is the local-production vault compatibility patch for the 0.2 release line.
+
+- Adds a dry-run-first `repair-frontmatter` maintenance command for narrowly recognized legacy `title` and `archived_reason` plain scalars containing unquoted colons.
+- Repairs are atomic and journaled, preserve bodies byte-for-byte, retain BOM/newline style, and refuse structured, tagged, commented, or otherwise ambiguous YAML.
+- Corpus verification now reports every malformed frontmatter path instead of stopping at the first parse failure.
+- Bulk frontmatter normalization skips reserved `index.md` and `log.md` files while explicit reserved-file operations remain rejected.
+- No physical corpus restructure or Wiki migration is required.
+
 ## 0.2.0 — 2026-07-10
 
 Fundus 0.2.0 is the second-release hardening milestone. It turns the local skill into a portable, contract-driven plugin while preserving the existing Markdown corpus and compatibility entrypoints.

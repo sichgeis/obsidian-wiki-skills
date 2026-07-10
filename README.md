@@ -206,6 +206,14 @@ The refined target profile treats active non-reserved notes as OKF-compatible co
 
 ## Frontmatter Normalization
 
+Before normalizing a legacy corpus, inspect narrowly repairable YAML quoting errors without writing:
+
+```bash
+python dist/fundus/scripts/fundus.py repair-frontmatter
+```
+
+Apply only the reported safe scalar-quoting repairs with `--apply`. Ambiguous YAML remains untouched and is reported for human review. Repairs preserve note bodies and run under the corpus lock and rollback journal.
+
 Normalize legacy note metadata without changing note bodies:
 
 ```bash
@@ -439,7 +447,7 @@ Fundus is licensed under the MIT License. The vendored `ruamel.yaml` 0.19.1 depe
 
 GitHub Actions runs the full suite on Python 3.11, 3.12, and 3.13 on Linux plus a Python 3.13 macOS compatibility job. A separate package job runs `task verify`, the exact packaged MCP integration, the artifact privacy scan, and the 2,000-note performance gate, then uploads the JSON performance report.
 
-The plugin manifest is the version source. Build and verification propagate and compare that version across the built manifest, runtime MCP `serverInfo`, local marketplace metadata, marketplace plugin copy, and the matching section in `RELEASE_NOTES.md`. The current release is 0.2.0.
+The plugin manifest is the version source. Build and verification propagate and compare that version across the built manifest, runtime MCP `serverInfo`, local marketplace metadata, marketplace plugin copy, and the matching section in `RELEASE_NOTES.md`. The current release is 0.2.1.
 
 ## Update Workflow
 
