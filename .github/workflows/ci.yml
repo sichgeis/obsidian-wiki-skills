@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - os: macos-latest
+            python-version: "3.13"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Unit, operation, fixture, concurrency, and protocol tests
+        run: python -m unittest discover -s tests
+      - name: Documentation consistency
+        run: python scripts/check_documentation.py
+      - name: Clean temporary-vault smoke test
+        run: python scripts/release_smoke_test.py
+
+  package:
+    name: Package and performance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+      - name: Build and verify exact plugin package
+        run: task verify
+      - name: Record 2,000-note search performance
+        run: python scripts/benchmark_search.py --notes 2000 --iterations 25 --assert-p95-ms 100 --output performance.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fundus-performance-python-3.13
+          path: performance.json

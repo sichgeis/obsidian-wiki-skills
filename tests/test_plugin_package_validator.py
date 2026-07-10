@@ -23,16 +23,20 @@ class PluginPackageValidatorTest(unittest.TestCase):
         self.plugin_root = Path(self.temp_dir.name) / "fundus-plugin"
         (self.plugin_root / ".codex-plugin").mkdir(parents=True)
         (self.plugin_root / "skills" / "fundus" / "scripts").mkdir(parents=True)
+        (self.plugin_root / "skills" / "fundus" / "scripts" / "fundus_core").mkdir(parents=True)
         (self.plugin_root / "skills" / "fundus" / "vendor" / "ruamel_yaml-0.19.1.dist-info" / "licenses").mkdir(parents=True)
         (self.plugin_root / "skills" / "fundus" / "SKILL.md").write_text("# Fundus\n")
         (self.plugin_root / "skills" / "fundus" / "scripts" / "fundus.py").write_text("")
         (self.plugin_root / "skills" / "fundus" / "scripts" / "fundus_mcp.py").write_text("")
+        (self.plugin_root / "skills" / "fundus" / "scripts" / "fundus_core" / "runtime.py").write_text("")
+        (self.plugin_root / "skills" / "fundus" / "scripts" / "fundus_core" / "mcp_server.py").write_text("")
         launcher = self.plugin_root / "skills" / "fundus" / "scripts" / "fundus_mcp_launcher.sh"
         launcher.write_text("#!/bin/sh\n")
         launcher.chmod(0o755)
         (self.plugin_root / "skills" / "fundus" / "vendor" / "ruamel_yaml-0.19.1.dist-info" / "licenses" / "LICENSE").write_text("MIT\n")
         (self.plugin_root / "LICENSE").write_text("MIT\n")
         (self.plugin_root / "THIRD_PARTY_LICENSES.md").write_text("# Third-party licenses\n")
+        (self.plugin_root / "RELEASE_NOTES.md").write_text("# Release notes\n\n## 0.1.0\n")
         (self.plugin_root / ".codex-plugin" / "plugin.json").write_text(
             json.dumps(
                 {

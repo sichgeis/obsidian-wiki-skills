@@ -125,7 +125,7 @@ Current behavior:
 - index status reports `current`, `missing`, `incompatible`, or `corrupt` plus stale paths,
 - redirects and reserved files are never ordinary evidence, while archives remain opt-in.
 
-This in-memory repair policy keeps scan and its MCP wrapper read-only. The 2026-07-10 benchmark on the primary arm64 macOS development machine measured 2,000-note warm search at 53.218 ms p50 and 74.543 ms p95, below the 100 ms release target. Full rebuild was 1,895.374 ms, one-file in-memory refresh was 46.130 ms, and the index was 3,778,517 bytes. Re-run with `task benchmark:search`.
+This in-memory repair policy keeps scan and its MCP wrapper read-only. The final 0.2.0 benchmark on the primary arm64 macOS/Python 3.14.6 machine measured 2,000-note warm search at 49.180 ms p50 and 50.927 ms p95, below the 100 ms release target. Full rebuild was 1,733.529 ms, one-file in-memory refresh was 47.622 ms, and the index was 4,092,517 bytes. Re-run with `task benchmark:search`.
 
 ### Current write behavior
 
@@ -220,21 +220,20 @@ Move supports the full project/area direction matrix. It retains the destination
 
 ### Current tests
 
-The test suite has broad unit coverage for helper and wrapper behavior. It includes newline framing and lifecycle tests plus an independent stdio client for both source and packaged commands.
+The test suite covers unit and operation contracts, fixture-driven frontmatter/path adversarial cases, cross-process concurrency and rollback, proposal/apply and stale evidence workflows, MCP schema/lifecycle/error contracts, an independent source and packaged stdio client, configuration and launcher portability, a clean temporary-vault CLI end-to-end, documentation consistency, artifact privacy, and a measured 2,000-note search gate.
 
-The remaining tests do not yet prove that:
+## Current source architecture and extraction seams
 
-- stale indexes repair before search,
-- lost updates are rejected,
-- concurrent writes preserve every index change,
-- proposal/apply workflows reject stale plans,
-- every MCP result conforms to an explicit output schema.
+The stable entrypoints are now thin facades:
 
-## Target source architecture
+```text
+scripts/fundus.py              compatibility import and CLI facade
+scripts/fundus_mcp.py          compatibility MCP entrypoint
+scripts/fundus_core/runtime.py application runtime and CLI dispatch
+scripts/fundus_core/mcp_server.py MCP contracts, validation, and JSON-RPC transport
+```
 
-Refactor incrementally. Do not perform a big-bang rewrite.
-
-Target boundaries:
+This is an incremental boundary, not a big-bang rewrite. `runtime.py` remains consolidated for the 0.2.0 compatibility release; `scripts/fundus_core/README.md` records the protected seams for later extraction. The intended decomposition remains:
 
 ```text
 fundus/
@@ -257,14 +256,14 @@ fundus/
     └── verification.py
 ```
 
-Compatibility entrypoints may remain:
+Compatibility entrypoints remain:
 
 ```text
 scripts/fundus.py
 scripts/fundus_mcp.py
 ```
 
-They should become thin launchers once the core package exists.
+They are thin and are enforced at 50 lines or fewer by the documentation/architecture checks. New transport behavior belongs in `mcp_server.py`; future runtime extraction must keep the facade API stable and pass the complete suite after every move.
 
 ## Target value objects
 

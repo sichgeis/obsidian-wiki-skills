@@ -100,12 +100,17 @@ def main() -> int:
     parser.add_argument("--notes", type=int, default=2000)
     parser.add_argument("--iterations", type=int, default=25)
     parser.add_argument("--assert-p95-ms", type=float)
+    parser.add_argument("--output", type=Path, help="Also write the JSON report to this path.")
     args = parser.parse_args()
     if args.notes < 1 or args.iterations < 1:
         parser.error("--notes and --iterations must be positive")
 
     payload = run_benchmark(args.notes, args.iterations)
-    print(json.dumps(payload, indent=2, sort_keys=True))
+    rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    print(rendered, end="")
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered)
     if args.assert_p95_ms is not None and float(payload["warm_search_p95_ms"]) > args.assert_p95_ms:
         print(
             f"Warm search p95 {payload['warm_search_p95_ms']} ms exceeds {args.assert_p95_ms} ms.",

@@ -39,8 +39,9 @@ Agent behavior:
 
 - Infer scope from the conversation.
 - If the conversation is domain or cross-repository work, prefer an area such as `Domains/...`.
-- Scan the inferred scope first.
-- Update a matching note when one exists; create only when no good match exists.
+- Search the inferred scope first.
+- Use `propose_update` for a matching note or `propose_create` only when no good match exists.
+- Apply the current proposal because the user's explicit save request supplies write intent; review every duplicate candidate before any override.
 - Confirm with the title or path.
 
 Example response shape:
@@ -56,7 +57,7 @@ User: "We learned that BACKEND-2291 is actually about prompt-template lineage. U
 Agent behavior:
 
 - Treat this as broad update intent.
-- Update Fundus automatically when relevant.
+- Use `propose_update`, then `apply_update` when the proposal remains current.
 - Also update Jira or other requested systems when the user asks for them.
 - Summarize what changed afterward.
 
@@ -74,7 +75,7 @@ Agent behavior:
 
 - Source code and current primary work sources win over Fundus.
 - If Fundus disagrees, do not silently mutate Fundus during ordinary research.
-- Tell the user the note appears stale and propose a concise replacement.
+- Use `mark_stale` only when write intent covers recording the contradiction; otherwise tell the user the note appears stale and present a concise proposed replacement without applying it.
 
 Example response shape:
 

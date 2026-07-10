@@ -19,7 +19,7 @@ python /path/to/fundus/scripts/fundus.py \
   doctor
 ```
 
-`doctor` is read-only and reports configuration provenance for every value, the resolved roots, Python executable, plugin/runtime root, path policy, index state, and lock state. `FUNDUS_CONFIG_PATH` must name a JSON file with the same shape as `config.example.json`.
+`doctor` is read-only and reports configuration provenance for every value in `config_provenance`, plus the resolved roots, Python executable, plugin/runtime root, path policy, index state, and lock state. `FUNDUS_CONFIG_PATH` must name a JSON file with the same shape as `config.example.json`.
 
 ## Common Search And Read
 

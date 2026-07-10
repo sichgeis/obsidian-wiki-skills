@@ -28,8 +28,9 @@ tasks:
       - mkdir -p "{{.BUILD_DIR}}/scripts"
       - mkdir -p "{{.BUILD_DIR}}/agents"
       - mkdir -p "{{.BUILD_DIR}}/docs/reference"
-      - cp SKILL.md config.json requirements.txt LICENSE THIRD_PARTY_LICENSES.md "{{.BUILD_DIR}}/"
+      - cp SKILL.md config.json requirements.txt LICENSE THIRD_PARTY_LICENSES.md RELEASE_NOTES.md "{{.BUILD_DIR}}/"
       - cp scripts/fundus.py scripts/fundus_mcp.py scripts/fundus_mcp_launcher.sh "{{.BUILD_DIR}}/scripts/"
+      - cp -R scripts/fundus_core "{{.BUILD_DIR}}/scripts/fundus_core"
       - cp -R vendor "{{.BUILD_DIR}}/vendor"
       - cp agents/openai.yaml "{{.BUILD_DIR}}/agents/openai.yaml"
       - cp docs/reference/*.md "{{.BUILD_DIR}}/docs/reference/"
@@ -44,7 +45,7 @@ tasks:
       - mkdir -p "{{.PLUGIN_BUILD_DIR}}/skills"
       - cp .codex-plugin/plugin.json "{{.PLUGIN_BUILD_DIR}}/.codex-plugin/plugin.json"
       - cp .mcp.json "{{.PLUGIN_BUILD_DIR}}/.mcp.json"
-      - cp LICENSE THIRD_PARTY_LICENSES.md "{{.PLUGIN_BUILD_DIR}}/"
+      - cp LICENSE THIRD_PARTY_LICENSES.md RELEASE_NOTES.md "{{.PLUGIN_BUILD_DIR}}/"
       - cp -R "{{.BUILD_DIR}}" "{{.PLUGIN_BUILD_DIR}}/skills/{{.SKILL_NAME}}"
 
   build:plugin-marketplace:
@@ -86,6 +87,21 @@ tasks:
     desc: Measure the 2,000-note Fundus rebuild and warm-search release target
     cmds:
       - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/benchmark_search.py --notes 2000 --iterations 25 --assert-p95-ms 100
+
+  check:docs:
+    desc: Check release, configuration, tool-surface, and architecture documentation consistency
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/check_documentation.py
+
+  test:release-smoke:
+    desc: Exercise proposal, mutation, retrieval, archive, index, and verification through the CLI in a temporary vault
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/release_smoke_test.py
+
+  test:concurrency:
+    desc: Run the cross-process lock, conflict, rollback, and recovery contract tests
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" -m unittest tests.test_fundus.MutationSafetyTest
 
   test:mcp-integration:
     desc: Exercise the source and exact packaged MCP commands with an independent client
@@ -129,18 +145,22 @@ tasks:
       - test -f "{{.BUILD_DIR}}/requirements.txt"
       - test -f "{{.BUILD_DIR}}/LICENSE"
       - test -f "{{.BUILD_DIR}}/THIRD_PARTY_LICENSES.md"
+      - test -f "{{.BUILD_DIR}}/RELEASE_NOTES.md"
       - test -f "{{.BUILD_DIR}}/agents/openai.yaml"
       - test -f "{{.BUILD_DIR}}/docs/reference/fundus-cli-reference.md"
       - test -f "{{.BUILD_DIR}}/docs/reference/fundus-workbench-examples.md"
       - test -f "{{.BUILD_DIR}}/scripts/fundus.py"
       - test -f "{{.BUILD_DIR}}/scripts/fundus_mcp.py"
       - test -x "{{.BUILD_DIR}}/scripts/fundus_mcp_launcher.sh"
+      - test -f "{{.BUILD_DIR}}/scripts/fundus_core/runtime.py"
+      - test -f "{{.BUILD_DIR}}/scripts/fundus_core/mcp_server.py"
       - test -f "{{.BUILD_DIR}}/vendor/ruamel/yaml/__init__.py"
       - test -f "{{.BUILD_DIR}}/vendor/ruamel_yaml-0.19.1.dist-info/licenses/LICENSE"
       - test -f "{{.PLUGIN_BUILD_DIR}}/.codex-plugin/plugin.json"
       - test -f "{{.PLUGIN_BUILD_DIR}}/.mcp.json"
       - test -f "{{.PLUGIN_BUILD_DIR}}/LICENSE"
       - test -f "{{.PLUGIN_BUILD_DIR}}/THIRD_PARTY_LICENSES.md"
+      - test -f "{{.PLUGIN_BUILD_DIR}}/RELEASE_NOTES.md"
       - test -f "{{.PLUGIN_BUILD_DIR}}/skills/{{.SKILL_NAME}}/SKILL.md"
       - test -f "{{.PLUGIN_MARKETPLACE_DIR}}/.agents/plugins/marketplace.json"
       - test -f "{{.PLUGIN_MARKETPLACE_DIR}}/plugins/{{.SKILL_NAME}}/.codex-plugin/plugin.json"
@@ -150,6 +170,8 @@ tasks:
       - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/audit_token_budget.py
       - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/validate_plugin_package.py "{{.PLUGIN_BUILD_DIR}}"
       - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/verify_release_consistency.py .codex-plugin/plugin.json "{{.PLUGIN_BUILD_DIR}}" "{{.PLUGIN_MARKETPLACE_DIR}}"
+      - task: check:docs
+      - task: test:release-smoke
       - task: test:mcp-integration
       - |
         if test -f "{{.PLUGIN_VALIDATOR}}"; then

@@ -26,8 +26,9 @@ Christian's current canonical corpus is `/Users/christian/vault/Hypatos/Fundus`.
 - `.mcp.json`: plugin MCP server registration.
 - `SKILL.md`: packaged Codex skill manifest and operating instructions.
 - `agents/openai.yaml`: Codex app metadata and invocation policy.
-- `scripts/fundus.py`: deterministic scan/read/create/update/index/archive/doctor tool for Fundus documents.
-- `scripts/fundus_mcp.py`: stdio MCP server exposing the same Fundus operations as typed tools.
+- `scripts/fundus.py`: thin compatibility facade for the deterministic CLI/runtime API.
+- `scripts/fundus_mcp.py`: thin compatibility entrypoint for the stdio MCP server.
+- `scripts/fundus_core/`: packaged application runtime and MCP contract/transport implementation; its README records the incremental extraction seams.
 - `config.json`: local default configuration packaged with the skill runtime.
 - `config.example.json`: portable configuration template.
 - `requirements.txt`: pinned runtime dependency declaration; the matching `ruamel.yaml` package is bundled under `vendor/`.
@@ -43,6 +44,7 @@ Christian's current canonical corpus is `/Users/christian/vault/Hypatos/Fundus`.
 - `docs/testing-and-validation.md`: phase-specific test strategy and release evidence requirements.
 - `docs/frontmatter-profile.md`: supported YAML frontmatter values, normalization, preservation, and rejection policy.
 - `docs/decision-record.md`: adopted product and architecture defaults for the remediation program.
+- `RELEASE_NOTES.md`: versioned behavior and upgrade notes for the current release.
 
 ## Build
 
@@ -264,27 +266,9 @@ python dist/fundus/scripts/fundus.py backup restore --id BACKUP_ID --apply
 
 Apply verifies every checksum first, creates a safety backup of the current corpus, restores under the corpus lock and recovery journal, rebuilds the index, and commits only after corpus verification.
 
-## Wiki To Fundus Migration
+## Legacy Wiki recovery
 
-Inspect the migration plan without writing:
-
-```bash
-python dist/fundus/scripts/fundus.py migrate wiki-to-fundus --dry-run
-```
-
-Apply the migration through a backup and staged destination:
-
-```bash
-python dist/fundus/scripts/fundus.py migrate wiki-to-fundus --apply
-```
-
-Verify the canonical `Fundus/` corpus:
-
-```bash
-python dist/fundus/scripts/fundus.py migrate wiki-to-fundus --verify
-```
-
-By default, apply renames the old `Wiki/` tree to a timestamped `Wiki.migrated-*` path after successful verification so `Wiki/` and `Fundus/` do not remain parallel live sources. Use `--retire-source keep` only for an explicit temporary transition.
+The primary `Wiki/` migration is complete and is not part of normal onboarding. The CLI retains a backup-first, staged, verified recovery workflow for deliberate re-runs. Start read-only with `migrate wiki-to-fundus --dry-run`; load `docs/reference/fundus-cli-reference.md` for the full maintenance procedure before any apply.
 
 ## Codex Permissions
 
@@ -402,7 +386,13 @@ Run:
 task verify
 ```
 
-This builds the direct skill package, plugin package, and local marketplace; checks the CLI and MCP entrypoints; validates the documented plugin configuration shape; launches the exact packaged MCP command through an independent client; and runs the unit tests.
+This builds the direct skill package, plugin package, and local marketplace; checks the thin CLI and MCP entrypoints; scans artifacts for personal paths; validates license/version/documentation consistency; runs a clean temporary-vault end-to-end; launches the exact packaged MCP command through an independent client; and runs the full unit, fixture, protocol, rollback, and concurrency suite.
+
+Measure and record the 2,000-note search release target separately:
+
+```bash
+task benchmark:search
+```
 
 After installing, verify the plugin is visible to Codex with:
 
@@ -444,6 +434,12 @@ The old `Wiki/` tree has been migrated and retired in the primary personal insta
 ## License
 
 Fundus is licensed under the MIT License. The vendored `ruamel.yaml` 0.19.1 dependency is also MIT-licensed; see `THIRD_PARTY_LICENSES.md` and the retained upstream license under `vendor/`.
+
+## CI and release
+
+GitHub Actions runs the full suite on Python 3.11, 3.12, and 3.13 on Linux plus a Python 3.13 macOS compatibility job. A separate package job runs `task verify`, the exact packaged MCP integration, the artifact privacy scan, and the 2,000-note performance gate, then uploads the JSON performance report.
+
+The plugin manifest is the version source. Build and verification propagate and compare that version across the built manifest, runtime MCP `serverInfo`, local marketplace metadata, marketplace plugin copy, and the matching section in `RELEASE_NOTES.md`. The current release is 0.2.0.
 
 ## Update Workflow
 

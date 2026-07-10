@@ -1,0 +1,46 @@
+{
+  "supported": [
+    {
+      "name": "scalar-list-normalization",
+      "document": "---\ntitle: Simple\ntags: ticket\n---\n\nBody\n"
+    },
+    {
+      "name": "quoted-flow-and-block-lists",
+      "document": "---\ntags: [ticket, 'quoted: value', \"hash # value\"]\naliases:\n  - one\n  - two\n---\n\nBody\n"
+    },
+    {
+      "name": "multiline-unicode-and-punctuation",
+      "document": "---\ntitle: \"O'Reilly: #1\"\ndescription: |\n  First line\n  Second line\nunicode: Café 日本語\n---\n\nBody\n"
+    },
+    {
+      "name": "typed-scalars-and-unknown-key",
+      "document": "---\nenabled: true\ndisabled: false\nempty: null\nobserved: 2026-07-10\nunknown_key: retained\n---\n\nBody\n"
+    },
+    {
+      "name": "empty-frontmatter",
+      "document": "---\n---\nBody\n"
+    }
+  ],
+  "unsupported": [
+    {
+      "name": "nested-map",
+      "document": "---\nnested:\n  child: value\n---\nBody\n"
+    },
+    {
+      "name": "nested-list",
+      "document": "---\ntags:\n  - [nested, list]\n---\nBody\n"
+    },
+    {
+      "name": "custom-tag",
+      "document": "---\nvalue: !custom tagged\n---\nBody\n"
+    },
+    {
+      "name": "duplicate-key",
+      "document": "---\ntitle: one\ntitle: two\n---\nBody\n"
+    },
+    {
+      "name": "missing-closing-delimiter",
+      "document": "---\ntitle: missing close\nBody\n"
+    }
+  ]
+}

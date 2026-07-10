@@ -111,7 +111,7 @@ The P11 transport, lifecycle, package-shape, error-recovery, and independent-cli
 | P17 — Explicit operation and MCP tool contracts | done | high | P11 |
 | P18 — Proposal/apply, duplicates, and provenance | done | high | P14, P17 |
 | P19 — Configuration, portability, and packaging | done | high | P11 |
-| P20 — Modularization, CI, and release readiness | planned | medium | P13-P19 |
+| P20 — Modularization, CI, and release readiness | done | medium | P13-P19 |
 
 Parallel work is allowed only when branches do not change the same contracts. P11, P12, P15, and part of P19 are conceptually parallel, but a single agent should complete P11 first.
 
@@ -980,7 +980,7 @@ Next phase:
 
 ## P20 — Modularization, CI, and release readiness
 
-Status: planned
+Status: done
 
 ### Goal
 
@@ -988,32 +988,96 @@ Reduce maintenance risk, enforce the new contracts continuously, and prepare the
 
 ### Required implementation
 
-- [ ] Extract modules incrementally behind compatibility entrypoints.
-- [ ] Keep CLI and MCP thin.
-- [ ] Add CI for supported Python versions.
-- [ ] Add package integration job.
-- [ ] Add personal-path artifact scan.
-- [ ] Add frontmatter and path-security fixtures.
-- [ ] Add concurrency tests appropriate for CI.
-- [ ] Add performance reporting.
-- [ ] Add documentation consistency checks.
-- [ ] Update README, SKILL, reference docs, and examples.
-- [ ] Archive or condense completed migration instructions from normal onboarding.
-- [ ] Write release notes.
-- [ ] Select and apply the next version.
-- [ ] Reinstall the local plugin and execute the host smoke checklist.
-- [ ] Update this tracker to reflect remaining deferred work.
+- [x] Extract modules incrementally behind compatibility entrypoints.
+- [x] Keep CLI and MCP thin.
+- [x] Add CI for supported Python versions.
+- [x] Add package integration job.
+- [x] Add personal-path artifact scan.
+- [x] Add frontmatter and path-security fixtures.
+- [x] Add concurrency tests appropriate for CI.
+- [x] Add performance reporting.
+- [x] Add documentation consistency checks.
+- [x] Update README, SKILL, reference docs, and examples.
+- [x] Archive or condense completed migration instructions from normal onboarding.
+- [x] Write release notes.
+- [x] Select and apply the next version.
+- [x] Reinstall the local plugin and execute the host smoke checklist.
+- [x] Update this tracker to reflect remaining deferred work.
 
 ### Acceptance criteria
 
-- [ ] Target module boundaries exist or equivalent boundaries are documented.
-- [ ] CI passes on the supported matrix.
-- [ ] Clean temporary-vault end-to-end passes.
-- [ ] Local Codex plugin smoke test passes.
-- [ ] All P11-P19 release-blocking criteria are done.
-- [ ] Documentation describes actual behavior.
-- [ ] Release artifact is versioned and reproducible.
-- [ ] `task verify` passes.
+- [x] Target module boundaries exist or equivalent boundaries are documented.
+- [x] CI passes on the supported matrix.
+- [x] Clean temporary-vault end-to-end passes.
+- [x] Local Codex plugin smoke test passes.
+- [x] All P11-P19 release-blocking criteria are done.
+- [x] Documentation describes actual behavior.
+- [x] Release artifact is versioned and reproducible.
+- [x] `task verify` passes.
+
+### Completion evidence — 2026-07-10
+
+Files changed:
+
+- thin `scripts/fundus.py` and `scripts/fundus_mcp.py` compatibility entrypoints,
+- `scripts/fundus_core/runtime.py`, `scripts/fundus_core/mcp_server.py`, and package-boundary documentation,
+- `.github/workflows/ci.yml`, `Taskfile.yml`, package validation, documentation checks, release smoke, and benchmark reporting,
+- fixture-driven frontmatter/path-security cases and architecture tests; existing cross-process tests are explicit CI coverage,
+- `.codex-plugin/plugin.json`, `RELEASE_NOTES.md`, `README.md`, `SKILL.md`, and implementation/testing/reference/example docs.
+
+Commands and results:
+
+```text
+python3 -m unittest tests.test_architecture_contract tests.test_fundus.FrontmatterCodecTest tests.test_fundus.PathSafetyTest -v
+# 16 focused architecture/fixture tests passed
+
+python3.11 -m unittest discover -s tests
+# 130 tests passed; one expected package-only skip
+
+docker run ... python:3.12-slim python -m unittest discover -s tests
+docker run ... python:3.13-slim python -m unittest discover -s tests
+# 130 tests passed on each Linux interpreter; one expected package-only skip
+
+task verify
+# exact plugin package, version 0.2.0, license, personal-path, docs, clean-vault, MCP, and 130-test gates passed
+
+python3 scripts/benchmark_search.py --notes 2000 --iterations 25 --assert-p95-ms 100 --output /private/tmp/fundus-performance-0.2.0.json
+# 49.180 ms p50; 50.927 ms p95; 1,733.529 ms rebuild; p95 gate passed
+
+task install
+# installed fundus@fundus-local 0.2.0+codex.20260710102735
+
+codex plugin list
+codex mcp list
+# plugin enabled; launcher resolved from the installed 0.2.0 cache root
+
+codex exec --ephemeral --sandbox read-only -C /Users/christian/projects/fundus-skill "...doctor exactly once..."
+# {"succeeded":true,"scope":"project","fundus_root_exists":true,"config_provenance_keys":["default_tags","fundus_dir","redaction","vault_path"]}
+```
+
+Built artifacts:
+
+- `dist/fundus`
+- `dist/fundus-plugin`
+- `dist/fundus-marketplace`
+- installed cache `/Users/christian/.codex/plugins/cache/fundus-local/fundus/0.2.0+codex.20260710102735`
+
+Implemented evidence:
+
+- The stable scripts are enforced at 50 lines or fewer and delegate to a packaged core. Runtime/application and MCP contract/transport boundaries now exist; documented internal seams permit later low-risk extraction without changing public imports.
+- CI declares Python 3.11, 3.12, and 3.13 on Linux plus Python 3.13 on macOS. Equivalent 3.11/3.12/3.13 suites passed locally (native plus isolated official Python containers); the package job runs `task verify` and uploads benchmark JSON.
+- External fixture files now drive supported/unsupported frontmatter and adversarial path cases. Cross-process success/conflict, lock recovery, rollback checkpoints, and backup recovery run in normal CI discovery.
+- `task verify` includes documentation/release consistency and a subprocess CLI flow covering doctor, proposal/apply create/update, search/read, move, archive/restore, index rebuild, and corpus verification in one temporary vault.
+- Release 0.2.0 is synchronized across source/build/marketplace metadata and runtime MCP info, with release notes and licenses packaged at both skill and plugin roots.
+- The first host attempt correctly surfaced `CONFIG_MISSING` after removal of the embedded vault. The documented user config was installed at `~/.config/fundus/config.json`; a second fresh Codex 0.144.1 read-only host completed exactly one `fundus/doctor` call.
+- The host smoke and direct doctor were read-only. They observed the live index as incompatible/stale and deliberately did not rebuild it. No live corpus note, index, archive, backup, or journal was mutated.
+
+Residual risks and deferred boundaries:
+
+- `runtime.py` remains consolidated for the compatibility release. Further config/path/frontmatter/search/locking/operation/admin extraction is deferred behind the stable facade and complete contract suite.
+- Immediate create/update and previous MCP names remain unlisted compatibility aliases. Removal requires a later explicit deprecation decision.
+- The installed live index should be rebuilt in a separately authorized maintenance operation; correctness is preserved because search repairs/falls back in memory.
+- The GitHub workflow is committed and its declared interpreter suites passed equivalently locally; the first hosted workflow run will occur when the branch is pushed.
 
 ---
 
@@ -1029,7 +1093,9 @@ These are intentionally not release blockers unless new evidence changes priorit
 - networked MCP transport,
 - autonomous global curation,
 - complex task-augmented MCP execution,
-- real-time filesystem watchers instead of on-demand freshness checks.
+- real-time filesystem watchers instead of on-demand freshness checks,
+- further extraction of the consolidated runtime behind the stable facade,
+- removal of unlisted immediate-write and legacy-name compatibility aliases after an explicit deprecation window.
 
 ## Pass protocol
 

@@ -273,14 +273,14 @@ Environment and method:
 Results:
 
 ```text
-generation:                    2358.649 ms
-full rebuild:                  1895.374 ms
-warm search p50:                 53.218 ms
-warm search p95:                 74.543 ms
-warm search max:                 74.980 ms
-one-file in-memory refresh:      46.130 ms
-index size:                    3778517 bytes
-max RSS (macOS raw bytes):     62242816
+generation:                    2632.599 ms
+full rebuild:                  1733.529 ms
+warm search p50:                 49.180 ms
+warm search p95:                 50.927 ms
+warm search max:                 61.574 ms
+one-file in-memory refresh:      47.622 ms
+index size:                    4092517 bytes
+max RSS (macOS raw bytes):     53968896
 ```
 
 The measured p95 passes the initial `<= 100 ms` release gate. The benchmark uses only temporary data and asserts the threshold when run through the Taskfile target.

@@ -1,0 +1,27 @@
+{
+  "invalid_projects": [
+    "",
+    ".",
+    "..",
+    "../other",
+    "nested/project",
+    "nested\\project",
+    "/absolute",
+    "_archive",
+    "Epics"
+  ],
+  "invalid_areas": [
+    "Random/Area",
+    "Epics",
+    "Epics\\Unsafe",
+    "Operations/../Other"
+  ],
+  "invalid_note_paths": [
+    "Fundus/../Other/private.md",
+    "../Other/private.md",
+    "Fundus/demo/note.txt",
+    "Fundus/demo/folder.md",
+    "Fundus/demo/index.md",
+    "Fundus/demo/log.md"
+  ]
+}

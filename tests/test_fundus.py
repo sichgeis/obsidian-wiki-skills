@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FIXTURES_DIR = ROOT / "tests" / "fixtures"
 SCRIPT_PATH = ROOT / "scripts" / "fundus.py"
 SPEC = importlib.util.spec_from_file_location("fundus", SCRIPT_PATH)
 assert SPEC and SPEC.loader
@@ -173,17 +174,11 @@ class FrontmatterCodecTest(FundusTestCase):
         return frontmatter
 
     def test_supported_yaml_shapes_round_trip_semantically(self) -> None:
-        fixtures = [
-            "---\ntitle: Simple\ntags: ticket\n---\n\nBody\n",
-            "---\ntags: [ticket, 'quoted: value', \"hash # value\"]\naliases:\n  - one\n  - two\n---\n\nBody\n",
-            "---\ntitle: \"O'Reilly: #1\"\ndescription: |\n  First line\n  Second line\nunicode: Café 日本語\n---\n\nBody\n",
-            "---\nenabled: true\ndisabled: false\nempty: null\nobserved: 2026-07-10\nunknown_key: retained\n---\n\nBody\n",
-            "---\n---\nBody\n",
-        ]
+        fixtures = json.loads((FIXTURES_DIR / "frontmatter_cases.json").read_text())["supported"]
 
         for fixture in fixtures:
-            with self.subTest(fixture=fixture):
-                self.assert_semantic_round_trip(fixture)
+            with self.subTest(fixture=fixture["name"]):
+                self.assert_semantic_round_trip(fixture["document"])
 
     def test_known_list_field_normalizes_scalar_to_list(self) -> None:
         frontmatter = self.assert_semantic_round_trip("---\ntitle: Note\ntags: ticket\n---\nBody\n")
@@ -229,18 +224,12 @@ class FrontmatterCodecTest(FundusTestCase):
         self.assertEqual(reparsed["title"], "A: # value")
 
     def test_unsupported_yaml_fails_with_stable_error_code(self) -> None:
-        fixtures = [
-            "---\nnested:\n  child: value\n---\nBody\n",
-            "---\ntags:\n  - [nested, list]\n---\nBody\n",
-            "---\nvalue: !custom tagged\n---\nBody\n",
-            "---\ntitle: one\ntitle: two\n---\nBody\n",
-            "---\ntitle: missing close\nBody\n",
-        ]
+        fixtures = json.loads((FIXTURES_DIR / "frontmatter_cases.json").read_text())["unsupported"]
 
         for fixture in fixtures:
-            with self.subTest(fixture=fixture):
+            with self.subTest(fixture=fixture["name"]):
                 with self.assertRaises(fundus.FundusError) as raised:
-                    fundus.parse_frontmatter(fixture)
+                    fundus.parse_frontmatter(fixture["document"])
                 self.assertEqual(raised.exception.code, "FRONTMATTER_INVALID")
 
     def test_bom_crlf_normalization_preserves_body_bytes(self) -> None:
@@ -2029,14 +2018,16 @@ class ScopeAndAreaTest(FundusTestCase):
 
 class PathSafetyTest(FundusTestCase):
     def test_project_names_must_be_safe_non_reserved_segments(self) -> None:
-        for project in ["", ".", "..", "../other", "nested/project", "nested\\project", "/absolute", "_archive", "Epics"]:
+        fixture = json.loads((FIXTURES_DIR / "path_security_cases.json").read_text())
+        for project in fixture["invalid_projects"]:
             with self.subTest(project=project):
                 with self.assertRaises(fundus.FundusError) as raised:
                     fundus.project_scope(project)
                 self.assertEqual(raised.exception.code, "PROJECT_NAME_INVALID")
 
     def test_area_paths_require_an_explicit_allowed_root_and_name(self) -> None:
-        for area in ["Random/Area", "Epics", "Epics\\Unsafe", "Operations/../Other"]:
+        fixture = json.loads((FIXTURES_DIR / "path_security_cases.json").read_text())
+        for area in fixture["invalid_areas"]:
             with self.subTest(area=area):
                 with self.assertRaises(fundus.FundusError) as raised:
                     fundus.area_scope(area)
@@ -2063,14 +2054,8 @@ class PathSafetyTest(FundusTestCase):
     def test_note_paths_reject_traversal_non_markdown_directories_and_reserved_files(self) -> None:
         directory = self.vault_path / "Fundus" / "demo" / "folder.md"
         directory.mkdir(parents=True)
-        for path in [
-            "Fundus/../Other/private.md",
-            "../Other/private.md",
-            "Fundus/demo/note.txt",
-            "Fundus/demo/folder.md",
-            "Fundus/demo/index.md",
-            "Fundus/demo/log.md",
-        ]:
+        fixture = json.loads((FIXTURES_DIR / "path_security_cases.json").read_text())
+        for path in fixture["invalid_note_paths"]:
             with self.subTest(path=path):
                 with self.assertRaises(fundus.FundusError):
                     fundus.resolve_fundus_note_path(self.config, path)

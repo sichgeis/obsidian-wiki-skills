@@ -67,6 +67,7 @@ def validate_plugin(plugin_root: Path) -> list[str]:
     require(mcp_path.exists(), "missing .mcp.json", errors)
     require((plugin_root / "LICENSE").exists(), "missing declared LICENSE", errors)
     require((plugin_root / "THIRD_PARTY_LICENSES.md").exists(), "missing third-party license inventory", errors)
+    require((plugin_root / "RELEASE_NOTES.md").exists(), "missing release notes", errors)
     if not manifest_path.exists():
         return errors
 
@@ -83,6 +84,13 @@ def validate_plugin(plugin_root: Path) -> list[str]:
     interface = manifest.get("interface") or {}
     for field in REQUIRED_INTERFACE_FIELDS:
         require(field in interface and interface[field] not in ["", []], f"interface missing {field}", errors)
+    release_notes_path = plugin_root / "RELEASE_NOTES.md"
+    if release_notes_path.exists() and manifest.get("version"):
+        require(
+            f"## {manifest['version']}" in release_notes_path.read_text(),
+            "release notes do not match manifest version",
+            errors,
+        )
 
     if mcp_path.exists():
         mcp = load_json(mcp_path)
@@ -102,6 +110,8 @@ def validate_plugin(plugin_root: Path) -> list[str]:
     require((plugin_root / "skills" / "fundus" / "SKILL.md").exists(), "missing packaged skill", errors)
     require((plugin_root / "skills" / "fundus" / "scripts" / "fundus.py").exists(), "missing packaged helper", errors)
     require((plugin_root / "skills" / "fundus" / "scripts" / "fundus_mcp.py").exists(), "missing packaged MCP server", errors)
+    require((plugin_root / "skills" / "fundus" / "scripts" / "fundus_core" / "runtime.py").exists(), "missing packaged core runtime", errors)
+    require((plugin_root / "skills" / "fundus" / "scripts" / "fundus_core" / "mcp_server.py").exists(), "missing packaged MCP core", errors)
     launcher_path = plugin_root / "skills" / "fundus" / "scripts" / "fundus_mcp_launcher.sh"
     require(launcher_path.exists(), "missing packaged MCP launcher", errors)
     require(launcher_path.exists() and os.access(launcher_path, os.X_OK), "packaged MCP launcher is not executable", errors)

@@ -37,6 +37,7 @@ Do not use Fundus when the user opts out, when the content is casual/non-work kn
 - If confidence is uncertain and the task matters, inspect a bounded number of additional plausible matches automatically.
 - Normal retrieval excludes archived notes. Include archives only when the user asks for archived, stale, historical, or recovery context.
 - Prefer indexed results. Run `index status` or `doctor` when retrieval looks stale; rebuild the index only when appropriate.
+- Use `doctor` for setup/runtime diagnosis; it reports which configuration source selected each value without exposing unrelated environment contents.
 
 ## Writes
 

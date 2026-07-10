@@ -368,7 +368,8 @@ class McpProtocolTest(McpFundusTestCase):
 
         self.assertEqual(initialized["result"]["protocolVersion"], "2025-06-18")
         self.assertEqual(initialized["result"]["serverInfo"]["name"], "fundus")
-        self.assertEqual(initialized["result"]["serverInfo"]["version"], "0.1.0")
+        manifest_version = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())["version"]
+        self.assertEqual(initialized["result"]["serverInfo"]["version"], manifest_version)
         self.assertIn("tools", initialized["result"]["capabilities"])
         self.assertIn("never through raw Markdown", initialized["result"]["instructions"])
         self.assertEqual(
