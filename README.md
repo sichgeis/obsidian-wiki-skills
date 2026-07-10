@@ -108,7 +108,9 @@ The server is self-contained and uses the Python standard library, the bundled F
 python dist/fundus/scripts/fundus_mcp.py --check
 ```
 
-The MCP server exposes typed tools for scanning, reading, creating, updating, moving, backing up, area initialization, indexing, archiving, restoring, cleaning up, and diagnosing Fundus notes. It uses the same configuration precedence, path confinement, redaction, atomic writes, index refresh behavior, and archive behavior as `scripts/fundus.py`.
+The default MCP surface is the compact workbench `search`, `read`, `create`, `update`, `move`, `archive`, `restore`, and `doctor`. Each tool advertises a title, input/output schemas, and audited behavior annotations; successful results include schema-validated structured content plus text JSON compatibility, while failures include a stable machine-readable code.
+
+Maintenance operations remain in the CLI and can be exposed deliberately by launching `fundus_mcp.py --admin`. Previous normal MCP names such as `scan_fundus` and `create_note` remain callable as unlisted deprecated aliases during the compatibility window. All transports share the same configuration, path, revision, redaction, locking, index, and archive application layer.
 
 ## Plugin Package
 

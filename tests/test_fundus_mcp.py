@@ -333,9 +333,9 @@ class McpProtocolTest(McpFundusTestCase):
         self.assertEqual(initialized["result"]["serverInfo"]["version"], "0.1.0")
         self.assertIn("tools", initialized["result"]["capabilities"])
         self.assertIn("never through raw Markdown", initialized["result"]["instructions"])
-        self.assertIn("migrate_wiki_to_fundus", tools)
+        self.assertEqual(set(tools), {"search", "read", "create", "update", "move", "archive", "restore", "doctor"})
         self.assertEqual(
-            tools["scan_fundus"]["annotations"],
+            tools["search"]["annotations"],
             {
                 "readOnlyHint": True,
                 "destructiveHint": False,
@@ -343,9 +343,57 @@ class McpProtocolTest(McpFundusTestCase):
                 "openWorldHint": False,
             },
         )
-        self.assertEqual(tools["create_note"]["inputSchema"]["properties"]["aliases"]["type"], "array")
-        self.assertEqual(tools["update_note"]["inputSchema"]["properties"]["mode"]["enum"], ["append", "replace", "rewrite"])
-        self.assertEqual(tools["update_note"]["inputSchema"]["properties"]["expected_revision"]["type"], "string")
+        self.assertEqual(tools["create"]["inputSchema"]["properties"]["aliases"]["type"], "array")
+        self.assertEqual(tools["update"]["inputSchema"]["properties"]["mode"]["enum"], ["append", "replace", "rewrite"])
+        self.assertEqual(tools["update"]["inputSchema"]["properties"]["expected_revision"]["type"], "string")
+        for tool in tools.values():
+            self.assertTrue(tool["title"])
+            self.assertLess(len(tool["description"]), 160)
+            self.assertEqual(set(tool["annotations"]), {"readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"})
+            self.assertEqual(tool["outputSchema"]["type"], "object")
+
+        admin_server = fundus_mcp.build_server(include_admin=True)
+        self.initialize_server(admin_server)
+        admin_listed = admin_server.handle_message({"jsonrpc": "2.0", "id": 9, "method": "tools/list"})
+        admin_names = {tool["name"] for tool in admin_listed["result"]["tools"]}
+        self.assertIn("migrate_wiki_to_fundus", admin_names)
+        self.assertIn("backup_restore", admin_names)
+
+    def test_operation_registry_contracts_are_complete_and_consistent(self) -> None:
+        registry = fundus_mcp.build_operation_registry(include_admin=True)
+        names = [operation.name for operation in registry]
+
+        self.assertEqual(len(names), len(set(names)))
+        self.assertTrue(any(operation.category == "compatibility" and operation.deprecated for operation in registry))
+        for operation in registry:
+            self.assertEqual(operation.input_schema["type"], "object")
+            self.assertEqual(operation.output_schema["type"], "object")
+            self.assertEqual(
+                set(operation.annotations),
+                {"readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"},
+            )
+            self.assertFalse(operation.annotations["openWorldHint"])
+            if operation.annotations["readOnlyHint"]:
+                self.assertFalse(operation.annotations["destructiveHint"])
+
+        bad_operation = fundus_mcp.OperationSpec(
+            name="bad_output",
+            title="Bad Output",
+            description="Test invalid output handling.",
+            input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            output_schema={
+                "type": "object",
+                "properties": {"required_value": {"type": "string"}},
+                "required": ["required_value"],
+                "additionalProperties": False,
+            },
+            handler=lambda: {"wrong": True},
+            annotations=fundus_mcp.behavior_annotations(True, False, True),
+            category="workbench",
+        )
+        bad_result = fundus_mcp.JsonRpcMcpServer("test", [bad_operation]).call_tool("bad_output", {})
+        self.assertTrue(bad_result["isError"])
+        self.assertEqual(bad_result["structuredContent"]["code"], "OUTPUT_SCHEMA_MISMATCH")
 
     def test_tool_call_returns_text_content_payload(self) -> None:
         server = fundus_mcp.build_server()
@@ -370,6 +418,10 @@ class McpProtocolTest(McpFundusTestCase):
         payload = json.loads(response["result"]["content"][0]["text"])
 
         self.assertEqual(payload["path"], "Fundus/demo/workbench-note.md")
+        self.assertEqual(response["result"]["structuredContent"], payload)
+        self.assertIsNone(
+            fundus_mcp.validate_schema_value(payload, server.tools["create_note"].output_schema)
+        )
         self.assertTrue((self.vault_path / "Fundus" / "demo" / "workbench-note.md").exists())
 
     def test_unsupported_protocol_version_negotiates_latest_supported_version(self) -> None:
@@ -485,6 +537,14 @@ class McpProtocolTest(McpFundusTestCase):
     def test_tool_argument_validation_and_business_errors_are_tool_errors(self) -> None:
         server = fundus_mcp.build_server()
         self.initialize_server(server)
+        created = fundus_mcp.create_note(
+            "Conflict Tool Note",
+            "Body",
+            project="demo",
+            project_root=str(self.project_root),
+        )
+        conflict_path = self.vault_path / created["path"]
+        conflict_path.write_text(conflict_path.read_text() + "\nHuman edit.\n")
 
         missing_required = server.handle_message(
             {
@@ -508,11 +568,32 @@ class McpProtocolTest(McpFundusTestCase):
                 },
             }
         )
+        revision_conflict = server.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "update",
+                    "arguments": {
+                        "path": created["path"],
+                        "mode": "rewrite",
+                        "content": "Overwrite",
+                        "expected_revision": created["revision"],
+                        "project": "demo",
+                        "project_root": str(self.project_root),
+                    },
+                },
+            }
+        )
 
         self.assertTrue(missing_required["result"]["isError"])
         self.assertIn("Missing required argument", missing_required["result"]["content"][0]["text"])
+        self.assertEqual(missing_required["result"]["structuredContent"]["code"], "INVALID_ARGUMENT")
         self.assertTrue(business_error["result"]["isError"])
         self.assertIn("does not exist", business_error["result"]["content"][0]["text"])
+        self.assertEqual(business_error["result"]["structuredContent"]["code"], "NOTE_NOT_FOUND")
+        self.assertEqual(revision_conflict["result"]["structuredContent"]["code"], "REVISION_CONFLICT")
 
     def test_stdio_messages_are_newline_delimited_utf8(self) -> None:
         message = {"jsonrpc": "2.0", "id": 4, "method": "ping", "params": {"text": "Grüße"}}

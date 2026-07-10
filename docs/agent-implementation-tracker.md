@@ -108,8 +108,8 @@ The P11 transport, lifecycle, package-shape, error-recovery, and independent-cli
 | P14 — Revisions, locking, and recoverable mutations | done | critical | P12 |
 | P15 — Frontmatter correctness | done | high | none |
 | P16 — Canonical scope and move semantics | done | high | P12, P15 |
-| P17 — Explicit operation and MCP tool contracts | ready | high | P11 |
-| P18 — Proposal/apply, duplicates, and provenance | planned | high | P14, P17 |
+| P17 — Explicit operation and MCP tool contracts | done | high | P11 |
+| P18 — Proposal/apply, duplicates, and provenance | ready | high | P14, P17 |
 | P19 — Configuration, portability, and packaging | planned | high | P11 |
 | P20 — Modularization, CI, and release readiness | planned | medium | P13-P19 |
 
@@ -715,7 +715,7 @@ Next phase:
 
 ## P17 — Explicit operation and MCP tool contracts
 
-Status: ready
+Status: done
 
 ### Goal
 
@@ -723,35 +723,85 @@ Make operation metadata, validation, output schemas, and MCP behavior derive fro
 
 ### Required implementation
 
-- [ ] Introduce an operation registry or equivalent single source.
-- [ ] Store handler, schemas, descriptions, and behavior metadata together.
-- [ ] Validate tool arguments server-side.
-- [ ] Add output schemas where practical.
-- [ ] Return `structuredContent` conforming to output schemas.
-- [ ] Retain text JSON for backward compatibility where useful.
-- [ ] Add `title` and tool behavior annotations.
-- [ ] Audit read-only, destructive, idempotent, and open-world hints.
-- [ ] Add stable error-code mapping.
-- [ ] Shorten and improve tool descriptions.
-- [ ] Define deprecation wrappers for existing tool names.
-- [ ] Separate normal workbench tools from admin operations.
-- [ ] Keep CLI and MCP over one application layer.
+- [x] Introduce an operation registry or equivalent single source.
+- [x] Store handler, schemas, descriptions, and behavior metadata together.
+- [x] Validate tool arguments server-side.
+- [x] Add output schemas where practical.
+- [x] Return `structuredContent` conforming to output schemas.
+- [x] Retain text JSON for backward compatibility where useful.
+- [x] Add `title` and tool behavior annotations.
+- [x] Audit read-only, destructive, idempotent, and open-world hints.
+- [x] Add stable error-code mapping.
+- [x] Shorten and improve tool descriptions.
+- [x] Define deprecation wrappers for existing tool names.
+- [x] Separate normal workbench tools from admin operations.
+- [x] Keep CLI and MCP over one application layer.
 
 ### Acceptance criteria
 
-- [ ] Runtime validation matches advertised schemas.
-- [ ] Structured outputs validate.
-- [ ] An annotation-consistency test passes.
-- [ ] Default tool list is compact and workbench-oriented.
-- [ ] Admin operations remain available through an explicit path.
-- [ ] Existing normal workflows retain a documented compatibility route.
-- [ ] `task verify` passes.
+- [x] Runtime validation matches advertised schemas.
+- [x] Structured outputs validate.
+- [x] An annotation-consistency test passes.
+- [x] Default tool list is compact and workbench-oriented.
+- [x] Admin operations remain available through an explicit path.
+- [x] Existing normal workflows retain a documented compatibility route.
+- [x] `task verify` passes.
+
+### Completion evidence — 2026-07-10
+
+Files changed:
+
+- `scripts/fundus_mcp.py`
+- `tests/test_fundus_mcp.py`
+- `tests/test_fundus_mcp_integration.py`
+- `README.md`
+- `docs/reference/fundus-cli-reference.md`
+- `docs/implementation.md`
+- `docs/agent-implementation-tracker.md`
+
+Commands and results:
+
+```text
+python -m unittest tests.test_fundus_mcp tests.test_fundus_mcp_integration
+# 25 tests passed; one expected package-only skip
+
+python -m unittest discover -s tests
+# 115 tests passed; one expected package-only skip
+
+task verify
+# packaged MCP integration 2/2 passed
+# full suite 115 tests passed; one expected package-only skip
+
+git diff --check
+# passed
+```
+
+Implemented evidence:
+
+- One `OperationSpec` registry stores name, title, concise description, handler, generated input schema, output schema, all four behavior annotations, category, visibility, and deprecation state.
+- The default listed workbench is exactly `search`, `read`, `create`, `update`, `move`, `archive`, `restore`, and `doctor`.
+- Administrative tools remain in the CLI and become discoverable only through explicit MCP `--admin` mode.
+- Previous normal names such as `scan_fundus`, `read_note`, and `create_note` remain callable as unlisted deprecated compatibility aliases; the independent client proves the route against source and exact package commands.
+- Successful calls return backward-compatible text JSON plus schema-validated `structuredContent`; a deliberately invalid handler result is rejected as `OUTPUT_SCHEMA_MISMATCH`.
+- Input validation and core failures return `isError` with structured stable codes such as `INVALID_ARGUMENT`, `NOTE_NOT_FOUND`, and `REVISION_CONFLICT`.
+- Every visible operation publishes non-empty title, bounded description, input/output schema, and audited read-only/destructive/idempotent/open-world annotations. Consistency tests ensure read-only tools are not destructive and all local operations are closed-world.
+- CLI and MCP handlers continue to call the same core functions; no transport-specific domain implementation was introduced.
+- All tests used temporary vaults; no live corpus operation was run.
+
+Residual risks:
+
+- P18 will replace immediate create/update as the preferred workflow with proposal/apply tools while retaining their compatibility path.
+- P20 owns the eventual compatibility-removal policy and release notes.
+
+Next phase:
+
+- P18 — Proposal/apply, duplicate prevention, and provenance is ready.
 
 ---
 
 ## P18 — Proposal/apply, duplicate prevention, and provenance
 
-Status: planned
+Status: ready
 
 ### Goal
 

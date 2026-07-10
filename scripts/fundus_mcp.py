@@ -356,48 +356,17 @@ def discover_server_version() -> str:
 
 
 @dataclass(frozen=True)
-class McpTool:
+class OperationSpec:
     name: str
+    title: str
     description: str
     input_schema: dict[str, Any]
+    output_schema: dict[str, Any]
     handler: Any
     annotations: dict[str, bool]
-
-
-TOOL_DESCRIPTIONS = {
-    "scan_fundus": "Search current Fundus notes through a read-only, freshness-checked index cache.",
-    "read_note": "Read a Fundus note by repository-relative vault path.",
-    "create_note": "Create a new Fundus note with OKF-compatible retrieval metadata.",
-    "update_note": "Append, replace a section, or rewrite an existing Fundus note.",
-    "add_frontmatter": "Add OKF-compatible frontmatter to an existing plain Markdown Fundus note.",
-    "normalize_frontmatter": "Dry-run or apply frontmatter normalization for active or archived Fundus notes.",
-    "move_note": "Move a Fundus note to another active Fundus path, optionally leaving a stub.",
-    "backup_create": "Create a JSON-manifested backup of the current Fundus corpus.",
-    "backup_list": "List available Fundus backups.",
-    "backup_inspect": "Inspect a Fundus backup manifest.",
-    "backup_verify": "Verify every file in a Fundus backup against its manifest checksum.",
-    "backup_restore": "Dry-run or apply a verified Fundus backup restore with a safety snapshot.",
-    "area_init": "Create an explicit cross-repository Fundus area skeleton.",
-    "index_status": "Report whether the lightweight Fundus search index is current.",
-    "index_rebuild": "Rebuild the lightweight Fundus search index.",
-    "migrate_wiki_to_fundus": "Dry-run, apply, or verify the one-time Wiki to Fundus migration.",
-    "archive_candidates": "Find active notes that may be ready to archive.",
-    "archive_apply": "Archive a Fundus note and add archival metadata.",
-    "archive_restore": "Restore an archived Fundus note to its original active path.",
-    "archive_cleanup": "Remove empty active Fundus directories left after archival moves.",
-    "archive_status": "Summarize archived note counts for the current project or area.",
-    "doctor": "Show resolved project, vault, scope, index, and corpus diagnostics.",
-}
-
-
-TOOL_ANNOTATIONS = {
-    "scan_fundus": {
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
-}
+    category: Literal["workbench", "admin", "compatibility"]
+    listed: bool = True
+    deprecated: bool = False
 
 
 PARAMETER_DESCRIPTIONS = {
@@ -437,32 +406,6 @@ PARAMETER_DESCRIPTIONS = {
     "force": "Ignore protective archive heuristics.",
     "reason": "Short archive reason.",
 }
-
-
-TOOL_FUNCTIONS = [
-    scan_fundus,
-    read_note,
-    create_note,
-    update_note,
-    add_frontmatter,
-    normalize_frontmatter,
-    move_note,
-    backup_create,
-    backup_list,
-    backup_inspect,
-    backup_verify,
-    backup_restore,
-    area_init,
-    index_status,
-    index_rebuild,
-    migrate_wiki_to_fundus,
-    archive_candidates,
-    archive_apply,
-    archive_restore,
-    archive_cleanup,
-    archive_status,
-    doctor,
-]
 
 
 def json_schema_for_annotation(annotation: Any) -> dict[str, Any]:
@@ -525,20 +468,171 @@ def input_schema_for_function(function: Any) -> dict[str, Any]:
     return schema
 
 
-def build_tools() -> list[McpTool]:
-    tools: list[McpTool] = []
-    for function in TOOL_FUNCTIONS:
-        name = function.__name__
-        tools.append(
-            McpTool(
-                name=name,
-                description=TOOL_DESCRIPTIONS[name],
-                input_schema=input_schema_for_function(function),
-                handler=function,
-                annotations=TOOL_ANNOTATIONS.get(name, {}),
+def object_output_schema(
+    properties: dict[str, dict[str, Any]] | None = None,
+    required: list[str] | None = None,
+) -> dict[str, Any]:
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": properties or {},
+        "additionalProperties": True,
+    }
+    if required:
+        schema["required"] = required
+    return schema
+
+
+GENERIC_OUTPUT_SCHEMA = object_output_schema()
+WORKBENCH_OUTPUT_SCHEMAS = {
+    "search": object_output_schema(
+        {
+            "project": {"type": "string"},
+            "scope": {"type": "string"},
+            "scope_path": {"type": "string"},
+            "documents": {"type": "array", "items": {"type": "object"}},
+        },
+        ["project", "scope", "scope_path", "documents"],
+    ),
+    "read": object_output_schema(
+        {
+            "path": {"type": "string"},
+            "resolved_path": {"type": "string"},
+            "content": {"type": "string"},
+            "revision": {"type": "string"},
+            "redirected": {"type": "boolean"},
+        },
+        ["path", "resolved_path", "content", "revision", "redirected"],
+    ),
+    "create": object_output_schema(
+        {"path": {"type": "string"}, "title": {"type": "string"}, "revision": {"type": "string"}},
+        ["path", "title", "revision"],
+    ),
+    "update": object_output_schema(
+        {"path": {"type": "string"}, "title": {"type": "string"}, "revision": {"type": "string"}},
+        ["path", "title", "revision"],
+    ),
+    "move": object_output_schema(
+        {"path": {"type": "string"}, "original_path": {"type": "string"}, "revision": {"type": "string"}},
+        ["path", "original_path", "revision"],
+    ),
+    "archive": object_output_schema(
+        {"path": {"type": "string"}, "original_path": {"type": "string"}, "revision": {"type": "string"}},
+        ["path", "original_path", "revision"],
+    ),
+    "restore": object_output_schema(
+        {"path": {"type": "string"}, "archived_path": {"type": "string"}, "revision": {"type": "string"}},
+        ["path", "archived_path", "revision"],
+    ),
+    "doctor": object_output_schema(
+        {"fundus_root": {"type": "string"}, "index": {"type": "object"}},
+        ["fundus_root", "index"],
+    ),
+}
+
+
+def behavior_annotations(read_only: bool, destructive: bool, idempotent: bool) -> dict[str, bool]:
+    return {
+        "readOnlyHint": read_only,
+        "destructiveHint": destructive,
+        "idempotentHint": idempotent,
+        "openWorldHint": False,
+    }
+
+
+def make_operation(
+    name: str,
+    title: str,
+    description: str,
+    handler: Any,
+    annotations: dict[str, bool],
+    output_schema: dict[str, Any],
+    category: Literal["workbench", "admin", "compatibility"],
+    *,
+    listed: bool = True,
+    deprecated: bool = False,
+) -> OperationSpec:
+    return OperationSpec(
+        name=name,
+        title=title,
+        description=description,
+        input_schema=input_schema_for_function(handler),
+        output_schema=output_schema,
+        handler=handler,
+        annotations=annotations,
+        category=category,
+        listed=listed,
+        deprecated=deprecated,
+    )
+
+
+def build_operation_registry(include_admin: bool = False) -> list[OperationSpec]:
+    registry: list[OperationSpec] = []
+    workbench_definitions = [
+        ("search", "Search Fundus", "Find current Fundus evidence in a project or area.", scan_fundus, True, False, True),
+        ("read", "Read Fundus Note", "Read a note and return content with its SHA-256 revision.", read_note, True, False, True),
+        ("create", "Create Fundus Note", "Create a scoped Fundus note with retrieval metadata.", create_note, False, False, False),
+        ("update", "Update Fundus Note", "Append, replace a section, or rewrite a revision-checked note.", update_note, False, True, False),
+        ("move", "Move Fundus Note", "Move a note while preserving identity and optionally leaving a redirect.", move_note, False, True, False),
+        ("archive", "Archive Fundus Note", "Move one selected note into the recoverable Fundus archive.", archive_apply, False, True, False),
+        ("restore", "Restore Fundus Note", "Restore one archived note to its validated active path.", archive_restore, False, False, False),
+        ("doctor", "Diagnose Fundus", "Report resolved scope, configuration, index, lock, and path policy.", doctor, True, False, True),
+    ]
+    for name, title, description, handler, read_only, destructive, idempotent in workbench_definitions:
+        annotations = behavior_annotations(read_only, destructive, idempotent)
+        output_schema = WORKBENCH_OUTPUT_SCHEMAS[name]
+        registry.append(
+            make_operation(name, title, description, handler, annotations, output_schema, "workbench")
+        )
+        legacy_name = handler.__name__
+        if legacy_name != name:
+            registry.append(
+                make_operation(
+                    legacy_name,
+                    f"Deprecated: {title}",
+                    f"Deprecated compatibility alias for `{name}`.",
+                    handler,
+                    annotations,
+                    output_schema,
+                    "compatibility",
+                    listed=False,
+                    deprecated=True,
+                )
+            )
+
+    admin_definitions = [
+        ("add_frontmatter", "Add Frontmatter", "Add typed frontmatter to an existing plain note.", add_frontmatter, False, True, False),
+        ("normalize_frontmatter", "Normalize Frontmatter", "Plan or apply bulk frontmatter normalization.", normalize_frontmatter, False, True, True),
+        ("backup_create", "Create Backup", "Create a checksummed Fundus corpus backup.", backup_create, False, False, False),
+        ("backup_list", "List Backups", "List available Fundus backups.", backup_list, True, False, True),
+        ("backup_inspect", "Inspect Backup", "Read one Fundus backup manifest.", backup_inspect, True, False, True),
+        ("backup_verify", "Verify Backup", "Verify all backup sizes and checksums.", backup_verify, True, False, True),
+        ("backup_restore", "Restore Backup", "Plan or apply a verified full-corpus restore.", backup_restore, False, True, False),
+        ("area_init", "Initialize Area", "Create a Fundus area skeleton without overwriting files.", area_init, False, False, True),
+        ("index_status", "Index Status", "Report index validity and stale paths.", index_status, True, False, True),
+        ("index_rebuild", "Rebuild Index", "Persist a complete derived search index rebuild.", index_rebuild, False, False, True),
+        ("migrate_wiki_to_fundus", "Migrate Wiki", "Plan, apply, or verify the legacy Wiki migration.", migrate_wiki_to_fundus, False, True, False),
+        ("archive_candidates", "Archive Candidates", "List possible archive candidates without changing notes.", archive_candidates, True, False, True),
+        ("archive_cleanup", "Clean Archive Folders", "Remove empty folders left by archive operations.", archive_cleanup, False, True, True),
+        ("archive_status", "Archive Status", "Summarize active and archived note counts.", archive_status, True, False, True),
+    ]
+    for name, title, description, handler, read_only, destructive, idempotent in admin_definitions:
+        registry.append(
+            make_operation(
+                name,
+                title,
+                description,
+                handler,
+                behavior_annotations(read_only, destructive, idempotent),
+                GENERIC_OUTPUT_SCHEMA,
+                "admin",
+                listed=include_admin,
             )
         )
-    return tools
+    return registry
+
+
+def build_tools(include_admin: bool = False) -> list[OperationSpec]:
+    return build_operation_registry(include_admin)
 
 
 def json_rpc_result(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
@@ -558,9 +652,11 @@ def tool_result_text(result: Any) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2, default=str)
 
 
-def tool_error(message: str) -> dict[str, Any]:
+def tool_error(message: str, code: str = "FUNDUS_ERROR") -> dict[str, Any]:
+    structured = {"error": message, "code": code}
     return {
-        "content": [{"type": "text", "text": message}],
+        "content": [{"type": "text", "text": tool_result_text(structured)}],
+        "structuredContent": structured,
         "isError": True,
     }
 
@@ -581,7 +677,36 @@ def json_type_matches(value: Any, expected_type: str) -> bool:
     return True
 
 
-def validate_tool_arguments(tool: McpTool, arguments: dict[str, Any]) -> str | None:
+def validate_schema_value(value: Any, schema: dict[str, Any], path: str = "$") -> str | None:
+    expected_type = schema.get("type")
+    if expected_type and not json_type_matches(value, expected_type):
+        return f"{path} must be of type {expected_type}."
+    allowed_values = schema.get("enum")
+    if allowed_values is not None and value not in allowed_values:
+        return f"{path} must be one of: {', '.join(map(str, allowed_values))}."
+    if expected_type == "object" and isinstance(value, dict):
+        properties = schema.get("properties") or {}
+        missing = [name for name in schema.get("required") or [] if name not in value]
+        if missing:
+            return f"{path} is missing required field(s): {', '.join(missing)}."
+        if schema.get("additionalProperties") is False:
+            unexpected = sorted(set(value) - set(properties))
+            if unexpected:
+                return f"{path} has unexpected field(s): {', '.join(unexpected)}."
+        for name, child_schema in properties.items():
+            if name in value:
+                error = validate_schema_value(value[name], child_schema, f"{path}.{name}")
+                if error:
+                    return error
+    if expected_type == "array" and isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for index, item in enumerate(value):
+            error = validate_schema_value(item, schema["items"], f"{path}[{index}]")
+            if error:
+                return error
+    return None
+
+
+def validate_tool_arguments(tool: OperationSpec, arguments: dict[str, Any]) -> str | None:
     schema = tool.input_schema
     properties = schema.get("properties") or {}
     required = schema.get("required") or []
@@ -604,7 +729,7 @@ def validate_tool_arguments(tool: McpTool, arguments: dict[str, Any]) -> str | N
 
 
 class JsonRpcMcpServer:
-    def __init__(self, name: str, tools: list[McpTool]) -> None:
+    def __init__(self, name: str, tools: list[OperationSpec]) -> None:
         self.name = name
         self.tools = {tool.name: tool for tool in tools}
         self.initialization_state = "new"
@@ -614,25 +739,38 @@ class JsonRpcMcpServer:
         return [
             {
                 "name": tool.name,
+                "title": tool.title,
                 "description": tool.description,
                 "inputSchema": tool.input_schema,
-                **({"annotations": tool.annotations} if tool.annotations else {}),
+                "outputSchema": tool.output_schema,
+                "annotations": tool.annotations,
             }
             for tool in self.tools.values()
+            if tool.listed
         ]
 
     def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         tool = self.tools.get(name)
         if tool is None:
-            raise fundus_core.FundusError(f"Unknown Fundus tool: {name}")
+            return tool_error(f"Unknown Fundus tool: {name}", "UNKNOWN_OPERATION")
         validation_error = validate_tool_arguments(tool, arguments or {})
         if validation_error:
-            return tool_error(validation_error)
+            return tool_error(validation_error, "INVALID_ARGUMENT")
         try:
             result = tool.handler(**(arguments or {}))
-            return {"content": [{"type": "text", "text": tool_result_text(result)}]}
+            if not isinstance(result, dict):
+                return tool_error("Operation returned a non-object result.", "OUTPUT_SCHEMA_MISMATCH")
+            output_error = validate_schema_value(result, tool.output_schema)
+            if output_error:
+                return tool_error(output_error, "OUTPUT_SCHEMA_MISMATCH")
+            return {
+                "content": [{"type": "text", "text": tool_result_text(result)}],
+                "structuredContent": result,
+            }
+        except fundus_core.FundusError as exc:
+            return tool_error(str(exc), exc.code)
         except Exception as exc:  # MCP tool errors should be surfaced as tool output, not crash the server.
-            return tool_error(str(exc))
+            return tool_error(str(exc), "INTERNAL_ERROR")
 
     def handle_message(self, message: Any) -> dict[str, Any] | None:
         if not isinstance(message, dict):
@@ -757,20 +895,21 @@ def write_stdio_message(stream: Any, message: dict[str, Any]) -> None:
     stream.flush()
 
 
-def build_server() -> JsonRpcMcpServer:
-    return JsonRpcMcpServer("fundus", build_tools())
+def build_server(include_admin: bool = False) -> JsonRpcMcpServer:
+    return JsonRpcMcpServer("fundus", build_tools(include_admin))
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the Fundus MCP stdio server.")
     parser.add_argument("--check", action="store_true", help="Validate that the server can be constructed, then exit.")
+    parser.add_argument("--admin", action="store_true", help="Expose explicit administrative tools in tools/list.")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
     try:
-        server = build_server()
+        server = build_server(args.admin)
         if args.check:
             print(json.dumps({"ok": True, "server": "fundus"}))
             return 0

@@ -141,7 +141,7 @@ class McpProcessIntegrationMixin:
             self.assertEqual(return_code, 0)
             self.assertEqual(stderr, "")
             self.assertEqual(initialized["result"]["protocolVersion"], "2025-11-25")
-            self.assertIn("create_note", {tool["name"] for tool in listed["result"]["tools"]})
+            self.assertIn("create", {tool["name"] for tool in listed["result"]["tools"]})
             created = json.loads(called["result"]["content"][0]["text"])
             self.assertEqual(created["path"], "Fundus/demo/independent-client-note.md")
             self.assertTrue((vault_path / created["path"]).exists())

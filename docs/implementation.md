@@ -145,9 +145,12 @@ Metadata-only changes preserve the decoded UTF-8 body exactly. LF, CRLF, and a l
 
 The server currently:
 
-- constructs tools from Python function signatures,
-- returns tool results as JSON serialized into text content,
-- exposes no output schemas or structured content,
+- derives name, title, concise description, handler, input schema, output schema, category, compatibility state, and behavior annotations from one operation registry,
+- lists a compact default workbench: `search`, `read`, `create`, `update`, `move`, `archive`, `restore`, and `doctor`,
+- exposes maintenance operations only through explicit `--admin` MCP mode or the CLI,
+- accepts the previous normal tool names as unlisted deprecated compatibility aliases,
+- returns successful object results as both backward-compatible text JSON and schema-validated `structuredContent`,
+- returns tool failures with `isError`, text JSON, and structured `error`/stable `code`,
 - uses compact newline-delimited UTF-8 JSON-RPC messages on stdio,
 - accepts `initialize`, `notifications/initialized`, `ping`, `tools/list`, and `tools/call`,
 - supports and negotiates the explicit protocol versions `2025-11-25` and `2025-06-18`,
@@ -155,13 +158,13 @@ The server currently:
 - validates basic JSON-RPC envelopes and `tools/call` request types,
 - validates required, unexpected, typed, and enumerated tool arguments against the generated input schemas,
 - returns unknown tools and malformed calls as protocol errors,
-- returns handler and input-validation failures as tool results with `isError: true`,
+- validates output objects against advertised schemas and turns contract violations into `OUTPUT_SCHEMA_MISMATCH`,
 - continues serving after recoverable parse, protocol, and tool errors,
 - derives `serverInfo.version` from the nearest plugin manifest when packaged.
 
 An independent subprocess client exercises the source server and exact packaged command through initialize, initialized notification, tools/list, a real temporary-vault tool call, unknown-tool recovery, and a final ping.
 
-Remaining MCP contract work belongs to P17: output schemas, structured content, titles, behavior annotations, a single explicit operation registry, and the compact normal-versus-admin tool split.
+The CLI and every MCP handler call the same core application functions. P18 will add proposal/apply operations to the workbench without duplicating mutation logic.
 
 ### Current plugin configuration
 

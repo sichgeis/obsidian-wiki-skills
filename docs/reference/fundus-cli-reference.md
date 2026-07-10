@@ -2,6 +2,12 @@
 
 This reference is installed with the skill for progressive disclosure. Load it only when exact command syntax or maintenance details are needed.
 
+## MCP Surface
+
+The installed plugin lists the compact workbench tools `search`, `read`, `create`, `update`, `move`, `archive`, `restore`, and `doctor`. Administrative operations in this document stay available through the CLI; a deliberately launched standalone server may expose them with `fundus_mcp.py --admin`. Previous normal MCP names remain unlisted compatibility aliases.
+
+MCP successes return both text JSON and schema-validated `structuredContent`. Tool failures return `isError: true` plus structured `error` and stable `code` fields.
+
 ## Common Search And Read
 
 ```bash
