@@ -13,7 +13,8 @@ Tests must establish:
 4. conflict-safe persistence,
 5. reversible maintenance behavior,
 6. package portability,
-7. agent workflow quality.
+7. agent workflow quality,
+8. provably complete note delivery.
 
 A test owned entirely by the same implementation is not sufficient evidence for an interoperability boundary.
 
@@ -30,7 +31,8 @@ Use unit tests for:
 - diff/proposal generation,
 - error mapping,
 - path confinement,
-- revision calculation.
+- revision calculation,
+- lossless read segmentation and cursor validation.
 
 ### Operation tests
 
@@ -40,7 +42,9 @@ Examples:
 
 ```text
 create -> search -> read
+long read -> follow every cursor -> exact reconstruction
 read -> external edit -> revision conflict
+read page -> external edit -> stale cursor -> restart
 move project -> area
 archive -> search exclusion -> restore
 area init -> corpus verify
@@ -529,6 +533,96 @@ Release checklist:
 [ ] implementation docs reflect current behavior
 [ ] no live corpus changes were made during testing
 ```
+
+## P21 complete-read tests
+
+### Shared operation
+
+Use deterministic temporary-vault fixtures for:
+
+```text
+empty note
+short note
+exact page boundary
+one character over the boundary
+one line longer than a page
+three-or-more-page Markdown note
+UTF-8 multibyte content
+leading BOM
+LF and CRLF
+redirected note
+```
+
+For every multi-page fixture:
+
+1. read without a cursor,
+2. follow each opaque cursor until `complete: true`,
+3. assert offsets are contiguous and monotonic,
+4. assert requested path, resolved path, redirect state, total length, and revision are stable,
+5. concatenate page content,
+6. compare with the exact decoded source text.
+
+No test may treat the presence of visible content as proof of completion.
+
+### Cursor safety
+
+Test malformed encoding, unsupported cursor versions, modified fields, a cursor reused with another requested path, a changed redirect target, zero/negative/out-of-range offsets, and a cursor presented after an external edit.
+
+Expected stable outcomes:
+
+```text
+READ_CURSOR_INVALID
+READ_CURSOR_STALE
+```
+
+Errors must not echo note content or cursor internals beyond actionable diagnostics.
+
+### MCP contract and output budget
+
+Validate:
+
+- optional cursor input and all required completion fields in the output schema,
+- `complete: false` always has a non-empty next cursor,
+- `complete: true` has no continuation cursor,
+- read remains read-only and idempotent,
+- the chosen server page bound accounts for both text JSON and `structuredContent`,
+- serialized ordinary-Markdown and multibyte pages remain below the recorded release budget,
+- deprecated read aliases cannot bypass the bound.
+
+The independent source and packaged MCP clients must reconstruct a note spanning at least three pages and verify distinct start, middle, and end sentinels.
+
+### Direct-edit race
+
+Read the first page, modify the temporary-vault note directly, then continue with the old cursor. The continuation must fail as stale. A fresh sequence must reconstruct only the new revision.
+
+### Skill and agent behavior
+
+Contract tests and agent fixtures require:
+
+```text
+read -> next_cursor -> ... -> complete true -> summarize or act
+```
+
+An agent must discard collected pages and restart after `READ_CURSOR_STALE`. A sequence that stops before completion, combines revisions, or relies on a truncated tool display fails.
+
+## P22 Fundus 0.2.2 release validation
+
+Run the normal P20 release checklist plus:
+
+```text
+[ ] P21 focused suite passes
+[ ] maximum serialized page size is recorded
+[ ] source MCP reconstructs the complete long fixture
+[ ] exact packaged MCP reconstructs the complete long fixture
+[ ] built SKILL.md requires continuation through complete true
+[ ] installed version is 0.2.2 in a fresh Codex task
+[ ] host smoke reads start, middle, and end sentinels
+[ ] host smoke reports one revision and final complete true
+[ ] stale-cursor host smoke restarts cleanly
+[ ] no live corpus note or index was mutated
+```
+
+The host smoke uses a synthetic note and temporary configuration. It must be large enough for at least three server pages; a one-call short-note check is insufficient evidence.
 
 ## Required evidence format
 

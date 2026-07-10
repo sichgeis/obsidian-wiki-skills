@@ -1,8 +1,9 @@
 # Fundus Agent Implementation Tracker
 
-Status: active remediation and second-release tracker
+Status: active 0.2.2 correctness-patch tracker
 Date: 2026-07-10
-First active phase: P11
+Current iteration: P21-P22
+First active phase: P21
 
 ## Agent read order
 
@@ -66,7 +67,7 @@ The existing project already delivered substantial capabilities:
 | P9 | done | token/output footprint audit |
 | P10 | done | first-release workbench examples and polish |
 
-The historical implementation remains useful. P11-P20 harden and evolve it rather than discarding it.
+The historical implementation remains useful. P11-P20 hardened and evolved it rather than discarding it. P21-P22 are the next focused patch iteration.
 
 ## Current findings inventory
 
@@ -98,6 +99,21 @@ The historical implementation remains useful. P11-P20 harden and evolve it rathe
 
 The P11 transport, lifecycle, package-shape, error-recovery, and independent-client findings are resolved. See the P11 completion evidence below.
 
+### 0.2.1 smoke-test follow-up
+
+The 2026-07-10 Fundus 0.2.1 smoke test passed search, read, proposal/apply, direct Obsidian editing, revision detection, configuration, indexing, locking, and interoperability checks without a functional regression.
+
+One correctness gap remains release-blocking for the next patch:
+
+- A large `read` result was truncated in the Codex tool display. The core operation reads the complete file, but the current MCP response places the complete note in both serialized text JSON and `structuredContent` and provides no bounded continuation contract. A caller therefore cannot prove that all note content reached the model.
+
+Decisions for the next iteration:
+
+- Deliver lossless, revision-bound, cursor-based read pages and require agents to continue until the result explicitly reports completion.
+- Keep direct Obsidian edit interoperability unchanged. Manually stale `updated` and `timestamp` frontmatter is accepted because the content revision detects the edit correctly.
+- Do not tune ambiguous search ranking from this smoke test; equal top scores remain acceptable.
+- Do not add proposal-by-ID storage in this patch. Passing the proposal object is mechanical overhead, not a correctness failure, and server-side proposal persistence would broaden the patch materially.
+
 ## Phase board
 
 | Phase | Status | Priority | Depends on |
@@ -112,8 +128,10 @@ The P11 transport, lifecycle, package-shape, error-recovery, and independent-cli
 | P18 — Proposal/apply, duplicates, and provenance | done | high | P14, P17 |
 | P19 — Configuration, portability, and packaging | done | high | P11 |
 | P20 — Modularization, CI, and release readiness | done | medium | P13-P19 |
+| P21 — Lossless complete-note reads | ready | critical | P17, P20 |
+| P22 — Fundus 0.2.2 release validation | planned | high | P21 |
 
-Parallel work is allowed only when branches do not change the same contracts. P11, P12, P15, and part of P19 are conceptually parallel, but a single agent should complete P11 first.
+P21 and P22 are deliberately sequential. Complete P21 and its focused acceptance suite before changing the release version or installing the patch in P22.
 
 ---
 
@@ -1078,6 +1096,135 @@ Residual risks and deferred boundaries:
 - Immediate create/update and previous MCP names remain unlisted compatibility aliases. Removal requires a later explicit deprecation decision.
 - The installed live index should be rebuilt in a separately authorized maintenance operation; correctness is preserved because search repairs/falls back in memory.
 - The GitHub workflow is committed and its declared interpreter suites passed equivalently locally; the first hosted workflow run will occur when the branch is pushed.
+
+---
+
+## P21 — Lossless complete-note reads
+
+Status: ready
+
+### Goal
+
+Make every agent-facing note read provably complete even when a note is larger than a host's single tool-result display budget.
+
+### Confirmed starting point
+
+- `read_note_text()` and `read_document_result()` currently load the complete UTF-8 file.
+- The MCP adapter returns that full result twice: serialized in a text content block and again in `structuredContent`.
+- The `read` tool has no page boundary, completion marker, continuation cursor, or protection against mixing pages from different revisions.
+- The 0.2.1 smoke test observed truncation at the host display boundary, so increasing one output limit is not a sufficient fix.
+
+### Protocol decision
+
+Keep `read` as a tool and add application-level pagination to its input/output contract. MCP's standard pagination contract applies to list operations rather than `tools/call`, but its opaque-cursor rules are the appropriate model: server-controlled page size, stable opaque cursor, explicit continuation, and a clean invalid-cursor error.
+
+Current sources checked on 2026-07-10:
+
+- [MCP 2025-11-25 tool results and structured content](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
+- [MCP cursor pagination guidance](https://modelcontextprotocol.io/specification/draft/server/utilities/pagination)
+
+### Required implementation
+
+- [ ] Add one shared, read-only `read_document_page` operation behind the CLI and MCP adapters.
+- [ ] Use a conservative server-controlled page bound. Select and document the exact bound from serialized-size tests; callers must not be able to request an unbounded page.
+- [ ] Preserve the existing single-result experience for short notes: first call returns all content with `complete: true`.
+- [ ] For long notes, return exact content segments with `offset`, `next_offset`, `total_characters`, `complete`, and `next_cursor` when more content remains.
+- [ ] Keep `path`, `resolved_path`, `redirected`, and the SHA-256 `revision` on every page.
+- [ ] Make the cursor opaque, versioned, path-bound, resolved-target-bound, revision-bound, and offset-bound.
+- [ ] Reject malformed, cross-note, wrong-target, and out-of-range cursors with `READ_CURSOR_INVALID`.
+- [ ] Reject continuation after the note or redirect target changes with `READ_CURSOR_STALE`; the agent must discard collected pages and restart from the first page.
+- [ ] Slice without losing, duplicating, normalizing, or reordering content. Concatenating pages from one revision must reproduce the exact decoded file text, including frontmatter, Unicode, BOM, and newline style.
+- [ ] Make the default MCP `read` and its deprecated alias use the bounded contract. Do not retain a hidden unbounded MCP route.
+- [ ] Preserve the existing full CLI `read` behavior for compatibility, but add an explicit paged CLI mode and cursor argument for the skill's fallback workflow. Both modes must use the shared operation layer.
+- [ ] Update the MCP input/output schemas and tool description so continuation is unambiguous.
+- [ ] Retain schema-validated `structuredContent` and compatible text JSON. Account for both copies when choosing and testing the page bound.
+- [ ] Update `SKILL.md` so an agent must follow `next_cursor` until `complete: true` before summarizing or acting on a note.
+- [ ] Instruct the agent to restart a read after `READ_CURSOR_STALE`, never combine revisions, and never infer completeness from a visually truncated display.
+- [ ] Update the README, CLI reference, workbench examples, implementation notes, architecture contract, and release smoke coverage when the behavior exists.
+
+### Focused tests
+
+- [ ] Short note returns one exact page with `complete: true` and no continuation cursor.
+- [ ] A deterministic long Markdown fixture requires at least three pages and reconstructs byte-for-byte after UTF-8 decoding.
+- [ ] Boundary fixtures cover multibyte Unicode, BOM, LF, CRLF, an empty note, an exact-boundary note, and one line longer than a page.
+- [ ] Every page reports the same requested path, resolved path, redirect state, total length, and revision.
+- [ ] A redirect continuation remains bound to the original path and resolved target.
+- [ ] Invalid, tampered, cross-note, and out-of-range cursors return `READ_CURSOR_INVALID` without leaking note content.
+- [ ] A direct external edit between pages returns `READ_CURSOR_STALE`; a fresh read reconstructs only the new revision.
+- [ ] MCP unit tests validate the new signature, output schema, annotations, error codes, and bounded serialized response size.
+- [ ] The independent source and exact-package MCP clients follow every cursor and recover start, middle, and end sentinels from a temporary-vault note.
+- [ ] Skill contract/evaluation coverage fails if retrieval instructions permit stopping before `complete: true`.
+
+### Acceptance criteria
+
+- [ ] No successful MCP `read` page can silently omit remaining content.
+- [ ] A caller can distinguish complete, incomplete, invalid, and stale reads mechanically.
+- [ ] Concatenating a successful page sequence yields the complete note at exactly one SHA-256 revision.
+- [ ] Normal short-note reads remain one call and preserve existing core fields.
+- [ ] CLI compatibility remains intact and the documented agent fallback is bounded.
+- [ ] All automated tests use temporary vaults.
+- [ ] Focused tests and `task verify` pass.
+
+### Expected implementation surface
+
+```text
+scripts/fundus_core/runtime.py
+scripts/fundus_core/mcp_server.py
+scripts/release_smoke_test.py
+tests/test_fundus.py
+tests/test_fundus_mcp.py
+tests/test_fundus_mcp_integration.py
+tests/test_skill_contract.py
+SKILL.md
+README.md
+docs/reference/fundus-cli-reference.md
+docs/reference/fundus-workbench-examples.md
+docs/implementation.md
+docs/architecture-invariants.md
+docs/testing-and-validation.md
+```
+
+### Exit evidence
+
+Record the chosen page bound, cursor fields and error behavior, focused test counts, maximum measured serialized page size, exact-package reconstruction result, `task verify`, and any residual host-specific risk.
+
+Next phase:
+
+- P22 — Fundus 0.2.2 release validation.
+
+---
+
+## P22 — Fundus 0.2.2 release validation
+
+Status: planned
+
+### Goal
+
+Package, install, and smoke-test the complete-read contract as Fundus 0.2.2 after P21 is fully accepted.
+
+### Required implementation
+
+- [ ] Confirm every P21 acceptance criterion and record its completion evidence.
+- [ ] Change the manifest version from 0.2.1 to 0.2.2 only after the complete-read implementation passes focused tests.
+- [ ] Add 0.2.2 release notes centered on lossless long-note reads, cursor/revision safety, and agent continuation behavior.
+- [ ] Update current-behavior documentation and remove any wording that implies one unbounded MCP result is always complete.
+- [ ] Run package build, validators, documentation checks, release smoke, independent source/package MCP integration, the full test suite, and `task verify`.
+- [ ] Inspect the built skill and plugin to confirm the updated `SKILL.md`, schemas, version, release notes, and runtime are packaged.
+- [ ] Reinstall the local plugin with the established cache-buster workflow and start a fresh Codex task.
+- [ ] Run a temporary-vault host smoke with a synthetic note large enough for at least three pages and unique start, middle, and end sentinels.
+- [ ] Require the host smoke agent to report the final `complete: true`, one stable revision across all pages, and all sentinels. A summary based on only the visible first page fails the smoke test.
+- [ ] Exercise one stale-cursor case after a direct temporary-vault edit and verify that the agent restarts rather than combining revisions.
+- [ ] Confirm search ranking, direct-edit frontmatter timestamps, and proposal payload transport are unchanged.
+- [ ] Record the installed cache path, exact plugin version, commands, test counts, manual evidence, and residual risks in this tracker.
+
+### Acceptance criteria
+
+- [ ] Version 0.2.2 is consistent across source manifest, built manifest, MCP `serverInfo`, marketplace metadata, installed plugin, README, and release notes.
+- [ ] `task verify` passes from a clean build.
+- [ ] Exact packaged MCP reconstruction proves the complete synthetic note was delivered.
+- [ ] Fresh Codex host smoke proves the agent automatically follows continuation to completion.
+- [ ] No automated or host-smoke operation writes to the live Hypatos Fundus corpus.
+- [ ] P22 completion evidence is recorded and no release-blocking risk remains.
 
 ---
 

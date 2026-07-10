@@ -195,3 +195,11 @@ Errors and diagnostics MUST avoid echoing full note bodies, environment values, 
 ### FND-033 — Live-corpus maintenance is explicit
 
 Migration, global normalization, backup restore, and bulk curation MUST be explicit admin actions with dry-run support and backup requirements where applicable.
+
+### FND-034 — Agent-facing reads are provably complete
+
+An agent-facing read MUST either return the complete note with an explicit completion marker or return a bounded, lossless segment with an opaque continuation cursor.
+
+Every segment in one read sequence MUST be bound to the same requested path, resolved target, and content revision. If the note or redirect target changes during the sequence, continuation MUST fail and the caller MUST restart rather than combine revisions.
+
+Silent truncation, an unmarked partial result, or a continuation sequence with gaps or duplicated content is not permitted.

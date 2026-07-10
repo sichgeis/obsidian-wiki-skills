@@ -352,6 +352,28 @@ redirect_to: Fundus/Epics/AI Agent Templates/prompt-boundary.md
 
 Redirects are excluded from normal evidence search and resolved on read.
 
+### Complete read delivery
+
+Agent-facing reads use a bounded, lossless continuation contract rather than assuming that a host will display an arbitrarily large tool result.
+
+The first read returns either the complete note or the first exact segment. Every result reports:
+
+```text
+requested path
+resolved path
+redirect state
+content revision
+current offset
+next offset
+total character count
+completion state
+opaque next cursor when incomplete
+```
+
+The server controls the maximum page size. A caller follows the cursor until completion and concatenates only pages with the same revision. Cursors are bound to the requested path, resolved target, revision, and next offset. If direct editing changes any bound state between pages, Fundus returns a stale-cursor error and the caller restarts from the first page.
+
+Short notes still complete in one call. Long notes must never rely on silent host truncation, an arbitrary increased output limit, or an agent guessing that the visible text is complete.
+
 ### Stable revision
 
 Every read operation returns a revision derived from the canonical bytes, normally SHA-256.

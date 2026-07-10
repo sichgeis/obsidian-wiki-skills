@@ -338,6 +338,7 @@ Input:
 
 ```text
 active or explicitly archived Fundus path
+optional opaque continuation cursor
 ```
 
 Output:
@@ -345,15 +346,21 @@ Output:
 ```json
 {
   "path": "...",
+  "resolved_path": "...",
   "content": "...",
   "revision": "sha256:...",
-  "metadata": {},
-  "archived": false,
-  "redirected_from": null
+  "redirected": false,
+  "offset": 0,
+  "next_offset": 4000,
+  "total_characters": 12000,
+  "complete": false,
+  "next_cursor": "opaque"
 }
 ```
 
-Read follows a validated redirect with a bounded hop count.
+Read follows a validated redirect with a bounded hop count. Agent-facing MCP reads are server-bounded and lossless: callers continue with `next_cursor` until `complete` is true. All pages are bound to one requested path, resolved target, and revision. A malformed cursor fails with `READ_CURSOR_INVALID`; a direct edit or redirect change between pages fails with `READ_CURSOR_STALE` so the caller can discard partial pages and restart.
+
+The exact page bound is selected and recorded during P21 from serialized response-size tests. Short notes remain single-call reads. The compatibility CLI may retain an explicit unbounded mode for human/scripting use, but the documented agent fallback uses the same paged operation as MCP.
 
 ### Propose create
 
