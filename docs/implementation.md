@@ -351,8 +351,8 @@ Output:
   "revision": "sha256:...",
   "redirected": false,
   "offset": 0,
-  "next_offset": 4000,
-  "total_characters": 12000,
+  "next_offset": 2000,
+  "total_characters": 6000,
   "complete": false,
   "next_cursor": "opaque"
 }
@@ -360,7 +360,9 @@ Output:
 
 Read follows a validated redirect with a bounded hop count. Agent-facing MCP reads are server-bounded and lossless: callers continue with `next_cursor` until `complete` is true. All pages are bound to one requested path, resolved target, and revision. A malformed cursor fails with `READ_CURSOR_INVALID`; a direct edit or redirect change between pages fails with `READ_CURSOR_STALE` so the caller can discard partial pages and restart.
 
-The exact page bound is selected and recorded during P21 from serialized response-size tests. Short notes remain single-call reads. The compatibility CLI may retain an explicit unbounded mode for human/scripting use, but the documented agent fallback uses the same paged operation as MCP.
+The server-controlled bound is 2,000 decoded Python characters. It was selected against the full JSON-RPC representation, including both text JSON and `structuredContent`, with a 32 KiB per-response release budget. Content is sliced only after one byte snapshot is decoded and hashed, preserving BOM, Unicode, LF/CRLF, and long lines exactly.
+
+The opaque version-1 cursor carries requested path, resolved target, SHA-256 revision, and next character offset inside an integrity-checked base64url envelope. Malformed, tampered, cross-note, unsupported-version, and out-of-range cursors fail with `READ_CURSOR_INVALID`. Changed content or redirect resolution fails with `READ_CURSOR_STALE`. Short notes remain single-call reads. The full-result CLI compatibility route internally follows the same page operation; the documented agent fallback uses `read --paged` and passes each cursor back with `--cursor`.
 
 ### Propose create
 

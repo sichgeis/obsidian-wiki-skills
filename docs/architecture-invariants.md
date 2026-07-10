@@ -203,3 +203,5 @@ An agent-facing read MUST either return the complete note with an explicit compl
 Every segment in one read sequence MUST be bound to the same requested path, resolved target, and content revision. If the note or redirect target changes during the sequence, continuation MUST fail and the caller MUST restart rather than combine revisions.
 
 Silent truncation, an unmarked partial result, or a continuation sequence with gaps or duplicated content is not permitted.
+
+The current release bound is 2,000 decoded characters per agent-facing page. A complete page has no continuation cursor; an incomplete page always has one.

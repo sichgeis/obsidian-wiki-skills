@@ -34,6 +34,10 @@ Do not use Fundus when the user opts out, when the content is casual/non-work kn
 - Prefer the `fundus` MCP server when available; otherwise use `scripts/fundus.py`.
 - Fundus does not depend on a separate Obsidian MCP. Do not describe missing Fundus tools as "the Obsidian MCP was not configured."
 - Start with `scan`; read only the best active match when confidence is good.
+- Treat every MCP `read` result as one bounded page. Follow `next_cursor` until `complete` is `true` before summarizing, quoting, comparing, or acting on the note.
+- Concatenate pages only when `path`, `resolved_path`, and `revision` remain identical and offsets are contiguous. Never infer completeness from how much text the tool display happens to show.
+- On `READ_CURSOR_STALE`, discard every collected page and restart without a cursor; never combine revisions. On `READ_CURSOR_INVALID`, restart the read rather than altering the cursor.
+- For CLI fallback, use `read --paged`, pass each returned cursor back with `--cursor`, and stop only at `complete: true`. The default unpaged CLI form exists for human and scripting compatibility, not agent retrieval.
 - If confidence is uncertain and the task matters, inspect a bounded number of additional plausible matches automatically.
 - Normal retrieval excludes archived notes. Include archives only when the user asks for archived, stale, historical, or recovery context.
 - Prefer indexed results. Run `index status` or `doctor` when retrieval looks stale; rebuild the index only when appropriate.

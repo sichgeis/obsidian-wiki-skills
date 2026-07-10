@@ -31,6 +31,23 @@ def run_cli(project_root: Path, env: dict[str, str], *arguments: str) -> dict[st
     return payload
 
 
+def run_cli_error(project_root: Path, env: dict[str, str], *arguments: str) -> dict[str, Any]:
+    result = subprocess.run(
+        [sys.executable, str(CLI), *arguments],
+        cwd=project_root,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        raise RuntimeError(f"Fundus CLI unexpectedly succeeded for {arguments}")
+    payload = json.loads(result.stderr)
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Fundus CLI returned a non-object error for {arguments}")
+    return payload
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir).resolve()
@@ -57,7 +74,13 @@ def main() -> int:
             "--alias",
             "SMOKE-200",
             "--content",
-            "## Evidence\n\nTemporary release validation.",
+            (
+                "## Evidence\n\nSTART-SENTINEL\n"
+                + ("Temporary release validation with Unicode Grüße 🙂.\n" * 180)
+                + "MIDDLE-SENTINEL\n"
+                + ("Complete read continuation evidence.\n" * 180)
+                + "END-SENTINEL"
+            ),
         )
         proposal_path = root / "create-proposal.json"
         proposal_path.write_text(json.dumps(proposal))
@@ -65,7 +88,33 @@ def main() -> int:
         note_path = str(created["path"])
 
         search = run_cli(project_root, env, "scan", "--query", "SMOKE-200")
+        first_page = run_cli(project_root, env, "read", "--path", note_path, "--paged")
+        note_file = vault / note_path
+        note_file.write_text(note_file.read_text() + "\n\nDirect temporary-vault edit.\n")
+        stale = run_cli_error(
+            project_root,
+            env,
+            "read",
+            "--path",
+            note_path,
+            "--paged",
+            "--cursor",
+            str(first_page["next_cursor"]),
+        )
+        pages = []
+        cursor = None
+        while True:
+            arguments = ["read", "--path", note_path, "--paged"]
+            if cursor is not None:
+                arguments.extend(["--cursor", cursor])
+            page = run_cli(project_root, env, *arguments)
+            pages.append(page)
+            if page["complete"]:
+                break
+            cursor = str(page["next_cursor"])
+        reconstructed = "".join(str(page["content"]) for page in pages)
         read = run_cli(project_root, env, "read", "--path", note_path)
+        exact_read_content = note_file.read_text()
         update_proposal = run_cli(
             project_root,
             env,
@@ -90,6 +139,14 @@ def main() -> int:
 
         if not search["documents"] or search["documents"][0]["path"] != note_path:
             raise RuntimeError("release smoke search did not retrieve the created note")
+        if stale.get("code") != "READ_CURSOR_STALE":
+            raise RuntimeError(f"release smoke stale cursor returned {stale}")
+        if len(pages) < 3 or reconstructed != exact_read_content or read["content"] != reconstructed:
+            raise RuntimeError("release smoke did not reconstruct the complete paged note")
+        if len({page["revision"] for page in pages}) != 1 or not pages[-1]["complete"]:
+            raise RuntimeError("release smoke page sequence was not revision-stable and complete")
+        if not all(sentinel in reconstructed for sentinel in ("START-SENTINEL", "MIDDLE-SENTINEL", "END-SENTINEL")):
+            raise RuntimeError("release smoke paged read lost a sentinel")
         if read["revision"] == updated["revision"]:
             raise RuntimeError("release smoke update did not change the revision")
         if moved["path"] != destination or restored["path"] != destination:
@@ -107,6 +164,10 @@ def main() -> int:
                     "final_path": destination,
                     "indexed_documents": index["documents"],
                     "corpus_counts": verification["counts"],
+                    "read_pages": len(pages),
+                    "read_revision": pages[0]["revision"],
+                    "stale_cursor_code": stale["code"],
+                    "complete": pages[-1]["complete"],
                 },
                 indent=2,
             )

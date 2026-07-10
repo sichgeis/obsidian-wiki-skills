@@ -414,6 +414,130 @@ class McpProtocolTest(McpFundusTestCase):
         self.assertIn("migrate_wiki_to_fundus", admin_names)
         self.assertIn("backup_restore", admin_names)
 
+    def test_read_contract_is_bounded_lossless_and_schema_validated(self) -> None:
+        server = fundus_mcp.build_server()
+        self.initialize_server(server)
+        content = "START\n" + ("ordinary markdown with Grüße and 🙂\\\"\n" * 250) + "END\n"
+        created = fundus_mcp.create_note(
+            "Paged MCP Note",
+            content,
+            project="demo",
+            project_root=str(self.project_root),
+        )
+
+        read_tool = server.tools["read"]
+        properties = read_tool.output_schema["properties"]
+        self.assertIn("cursor", read_tool.input_schema["properties"])
+        self.assertEqual(
+            {
+                "path",
+                "resolved_path",
+                "content",
+                "revision",
+                "redirected",
+                "offset",
+                "next_offset",
+                "total_characters",
+                "complete",
+                "next_cursor",
+            },
+            set(properties),
+        )
+        self.assertEqual(read_tool.annotations, fundus_mcp.behavior_annotations(True, False, True))
+
+        pages = []
+        cursor = None
+        maximum_wire_bytes = 0
+        while True:
+            arguments = {"path": created["path"], "project_root": str(self.project_root)}
+            if cursor is not None:
+                arguments["cursor"] = cursor
+            response = server.handle_message(
+                {
+                    "jsonrpc": "2.0",
+                    "id": len(pages) + 10,
+                    "method": "tools/call",
+                    "params": {"name": "read", "arguments": arguments},
+                }
+            )
+            maximum_wire_bytes = max(
+                maximum_wire_bytes,
+                len(json.dumps(response, ensure_ascii=False, separators=(",", ":")).encode("utf-8")),
+            )
+            page = response["result"]["structuredContent"]
+            self.assertEqual(page, json.loads(response["result"]["content"][0]["text"]))
+            self.assertIsNone(fundus_mcp.validate_schema_value(page, read_tool.output_schema))
+            pages.append(page)
+            if page["complete"]:
+                self.assertNotIn("next_cursor", page)
+                break
+            self.assertTrue(page["next_cursor"])
+            cursor = page["next_cursor"]
+
+        exact = (self.vault_path / created["path"]).read_text()
+        self.assertGreaterEqual(len(pages), 3)
+        self.assertEqual("".join(page["content"] for page in pages), exact)
+        self.assertLessEqual(maximum_wire_bytes, 32768)
+
+        multibyte = fundus_mcp.create_note(
+            "Multibyte Page Budget",
+            "🙂終ü\\\"\n" * 1200,
+            project="demo",
+            project_root=str(self.project_root),
+        )
+        multibyte_response = server.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 99,
+                "method": "tools/call",
+                "params": {
+                    "name": "read",
+                    "arguments": {
+                        "path": multibyte["path"],
+                        "project_root": str(self.project_root),
+                    },
+                },
+            }
+        )
+        multibyte_wire_bytes = len(
+            json.dumps(multibyte_response, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        )
+        self.assertEqual(
+            len(multibyte_response["result"]["structuredContent"]["content"]),
+            fundus.READ_PAGE_MAX_CHARACTERS,
+        )
+        self.assertLessEqual(multibyte_wire_bytes, 32768)
+
+        alias_page = server.call_tool(
+            "read_note",
+            {"path": created["path"], "project_root": str(self.project_root)},
+        )["structuredContent"]
+        self.assertEqual(alias_page["complete"], False)
+        self.assertEqual(len(alias_page["content"]), fundus.READ_PAGE_MAX_CHARACTERS)
+
+    def test_read_tool_reports_invalid_and_stale_cursor_codes_without_content(self) -> None:
+        server = fundus_mcp.build_server()
+        self.initialize_server(server)
+        secret = "DO-NOT-LEAK-THIS-PAYLOAD"
+        created = fundus_mcp.create_note(
+            "Cursor Safety",
+            secret + (" x" * (fundus.READ_PAGE_MAX_CHARACTERS * 2)),
+            project="demo",
+            project_root=str(self.project_root),
+        )
+        arguments = {"path": created["path"], "project_root": str(self.project_root)}
+        first_page = server.call_tool("read", arguments)["structuredContent"]
+
+        invalid = server.call_tool("read", {**arguments, "cursor": "malformed"})
+        note_path = self.vault_path / created["path"]
+        note_path.write_text(note_path.read_text() + "\nexternal edit\n")
+        stale = server.call_tool("read", {**arguments, "cursor": first_page["next_cursor"]})
+
+        self.assertEqual(invalid["structuredContent"]["code"], "READ_CURSOR_INVALID")
+        self.assertEqual(stale["structuredContent"]["code"], "READ_CURSOR_STALE")
+        self.assertNotIn(secret, invalid["content"][0]["text"])
+        self.assertNotIn(secret, stale["content"][0]["text"])
+
     def test_operation_registry_contracts_are_complete_and_consistent(self) -> None:
         registry = fundus_mcp.build_operation_registry(include_admin=True)
         names = [operation.name for operation in registry]

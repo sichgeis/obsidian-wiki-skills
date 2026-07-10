@@ -1,5 +1,18 @@
 # Fundus release notes
 
+## 0.2.2 — 2026-07-10
+
+Fundus 0.2.2 is the complete-read correctness patch for the 0.2 release line.
+
+- Makes every MCP `read` result explicitly complete or continuable, with a conservative server-controlled bound of 2,000 decoded characters per page.
+- Adds lossless offsets, total character count, completion state, and opaque continuation cursors while preserving one-call reads for short notes.
+- Binds cursors to the requested path, resolved redirect target, SHA-256 revision, and next offset so pages from different notes or revisions cannot be combined silently.
+- Returns `READ_CURSOR_INVALID` for malformed, tampered, cross-note, unsupported-version, and out-of-range cursors, and `READ_CURSOR_STALE` after direct edits or redirect changes.
+- Preserves the full-result CLI `read` behavior for compatibility and adds `read --paged --cursor` for bounded agent fallback through the same shared operation.
+- Extends source, packaged MCP, CLI smoke, and skill-contract coverage with multi-page Unicode, BOM, CRLF, long-line, redirect, stale-edit, and exact-reconstruction fixtures.
+
+After reinstalling with `task install`, start a fresh Codex task so the updated MCP schema and continuation instructions are loaded.
+
 ## 0.2.1 — 2026-07-10
 
 Fundus 0.2.1 is the local-production vault compatibility patch for the 0.2 release line.

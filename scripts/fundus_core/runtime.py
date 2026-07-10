@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 import difflib
 import functools
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -50,6 +52,9 @@ INDEX_VERSION = 4
 MAX_INDEX_EXCERPT_CHARS = 600
 MAX_SCAN_RESULTS = 20
 MAX_PROPOSAL_DIFF_CHARS = 12000
+READ_PAGE_MAX_CHARACTERS = 2000
+READ_CURSOR_VERSION = 1
+READ_CURSOR_CONTEXT = "fundus-read-cursor"
 ARCHIVE_DIRNAME = "_archive"
 BACKUP_DIRNAME = ".fundus-backups"
 JOURNAL_DIRNAME = ".fundus-journal"
@@ -628,6 +633,16 @@ def read_note_text(path: Path) -> str:
         return path.read_bytes().decode("utf-8")
     except UnicodeDecodeError as exc:
         raise FundusError(f"Fundus note is not valid UTF-8: {path}", "FRONTMATTER_INVALID") from exc
+
+
+def read_note_snapshot(path: Path) -> tuple[str, str]:
+    """Read and hash one immutable byte snapshot of a note."""
+    content = path.read_bytes()
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise FundusError(f"Fundus note is not valid UTF-8: {path}", "FRONTMATTER_INVALID") from exc
+    return text, f"sha256:{hashlib.sha256(content).hexdigest()}"
 
 
 def read_content_arg(content: str | None, content_file: str | None) -> str:
@@ -2079,17 +2094,144 @@ def resolve_redirect_document_path(config: Config, path: Path, max_hops: int = 3
     raise FundusError(f"Redirect chain exceeds {max_hops} hops.", "REDIRECT_LOOP")
 
 
-def read_document_result(config: Config, path_arg: str) -> dict[str, Any]:
+def _read_cursor_invalid() -> FundusError:
+    return FundusError("Read cursor is invalid; restart from the first page.", "READ_CURSOR_INVALID")
+
+
+def _read_cursor_stale() -> FundusError:
+    return FundusError("Read cursor is stale because the note changed; discard collected pages and restart.", "READ_CURSOR_STALE")
+
+
+def _read_cursor_checksum(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(f"{READ_CURSOR_CONTEXT}\0{canonical}".encode("utf-8")).hexdigest()
+
+
+def _encode_read_cursor(payload: dict[str, Any]) -> str:
+    envelope = {**payload, "checksum": _read_cursor_checksum(payload)}
+    encoded = json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(encoded).decode("ascii").rstrip("=")
+
+
+def _decode_read_cursor(cursor: str) -> dict[str, Any]:
+    if not cursor or len(cursor) > 16384:
+        raise _read_cursor_invalid()
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        decoded = base64.b64decode(cursor + padding, altchars=b"-_", validate=True)
+        envelope = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise _read_cursor_invalid() from exc
+
+    expected_fields = {"version", "path", "resolved_path", "revision", "offset", "checksum"}
+    if not isinstance(envelope, dict) or set(envelope) != expected_fields:
+        raise _read_cursor_invalid()
+    payload = {key: envelope[key] for key in expected_fields if key != "checksum"}
+    checksum = envelope["checksum"]
+    if (
+        not isinstance(checksum, str)
+        or re.fullmatch(r"[0-9a-f]{64}", checksum) is None
+        or not hmac.compare_digest(checksum, _read_cursor_checksum(payload))
+    ):
+        raise _read_cursor_invalid()
+    if (
+        isinstance(envelope["version"], bool)
+        or not isinstance(envelope["version"], int)
+        or envelope["version"] != READ_CURSOR_VERSION
+    ):
+        raise _read_cursor_invalid()
+    if any(not isinstance(envelope[field], str) or not envelope[field] for field in ("path", "resolved_path", "revision")):
+        raise _read_cursor_invalid()
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", envelope["revision"]) is None:
+        raise _read_cursor_invalid()
+    if isinstance(envelope["offset"], bool) or not isinstance(envelope["offset"], int) or envelope["offset"] <= 0:
+        raise _read_cursor_invalid()
+    return payload
+
+
+def _read_document_snapshot(config: Config, path_arg: str, *, continuing: bool) -> dict[str, Any]:
     path = resolve_fundus_note_path(config, path_arg)
     if not path.exists():
+        if continuing:
+            raise _read_cursor_stale()
         raise FundusError(f"Document does not exist: {path_arg}", "NOTE_NOT_FOUND")
-    resolved_path = resolve_redirect_document_path(config, path)
+    try:
+        resolved_path = resolve_redirect_document_path(config, path)
+        content, revision = read_note_snapshot(resolved_path)
+    except FundusError as exc:
+        if continuing and exc.code in {
+            "NOTE_NOT_FOUND",
+            "REDIRECT_INVALID",
+            "REDIRECT_LOOP",
+            "REDIRECT_TARGET_NOT_FOUND",
+        }:
+            raise _read_cursor_stale() from exc
+        raise
     return {
         "path": str(path.relative_to(config.vault_path)),
         "resolved_path": str(resolved_path.relative_to(config.vault_path)),
-        "content": read_note_text(resolved_path),
-        "revision": path_revision(resolved_path),
+        "content": content,
+        "revision": revision,
         "redirected": resolved_path != path,
+    }
+
+
+def read_document_page(config: Config, path_arg: str, cursor: str | None = None) -> dict[str, Any]:
+    cursor_payload = _decode_read_cursor(cursor) if cursor is not None else None
+    snapshot = _read_document_snapshot(config, path_arg, continuing=cursor_payload is not None)
+    offset = 0
+    if cursor_payload is not None:
+        if cursor_payload["path"] != snapshot["path"]:
+            raise _read_cursor_invalid()
+        if cursor_payload["resolved_path"] != snapshot["resolved_path"]:
+            raise _read_cursor_stale()
+        if cursor_payload["revision"] != snapshot["revision"]:
+            raise _read_cursor_stale()
+        offset = int(cursor_payload["offset"])
+
+    content = str(snapshot["content"])
+    total_characters = len(content)
+    if cursor_payload is not None and offset >= total_characters:
+        raise _read_cursor_invalid()
+    next_offset = min(offset + READ_PAGE_MAX_CHARACTERS, total_characters)
+    complete = next_offset == total_characters
+    result = {
+        "path": snapshot["path"],
+        "resolved_path": snapshot["resolved_path"],
+        "content": content[offset:next_offset],
+        "revision": snapshot["revision"],
+        "redirected": snapshot["redirected"],
+        "offset": offset,
+        "next_offset": next_offset,
+        "total_characters": total_characters,
+        "complete": complete,
+    }
+    if not complete:
+        result["next_cursor"] = _encode_read_cursor(
+            {
+                "version": READ_CURSOR_VERSION,
+                "path": snapshot["path"],
+                "resolved_path": snapshot["resolved_path"],
+                "revision": snapshot["revision"],
+                "offset": next_offset,
+            }
+        )
+    return result
+
+
+def read_document_result(config: Config, path_arg: str) -> dict[str, Any]:
+    """Compatibility full read assembled through the bounded shared operation."""
+    page = read_document_page(config, path_arg)
+    content_parts = [str(page["content"])]
+    while not page["complete"]:
+        page = read_document_page(config, path_arg, str(page["next_cursor"]))
+        content_parts.append(str(page["content"]))
+    return {
+        "path": page["path"],
+        "resolved_path": page["resolved_path"],
+        "content": "".join(content_parts),
+        "revision": page["revision"],
+        "redirected": page["redirected"],
     }
 
 
@@ -3945,6 +4087,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     read_parser = subparsers.add_parser("read", help="Read a Fundus document.")
     read_parser.add_argument("--path", required=True, help="Fundus document path relative to the vault root.")
+    read_parser.add_argument("--paged", action="store_true", help="Return one bounded page with explicit completion state.")
+    read_parser.add_argument("--cursor", help="Opaque continuation cursor from a previous paged read.")
 
     create_parser = subparsers.add_parser("create", help="Create a new Fundus document.")
     add_area_argument(create_parser)
@@ -4163,7 +4307,10 @@ def main() -> int:
             return 0
 
         if args.command == "read":
-            print(json.dumps(read_document_result(config, args.path), indent=2))
+            if args.cursor and not args.paged:
+                raise FundusError("--cursor requires --paged.", "INVALID_ARGUMENT")
+            result = read_document_page(config, args.path, args.cursor) if args.paged else read_document_result(config, args.path)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
 
         if args.command == "propose-create":

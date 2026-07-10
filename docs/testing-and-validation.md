@@ -610,16 +610,16 @@ An agent must discard collected pages and restart after `READ_CURSOR_STALE`. A s
 Run the normal P20 release checklist plus:
 
 ```text
-[ ] P21 focused suite passes
-[ ] maximum serialized page size is recorded
-[ ] source MCP reconstructs the complete long fixture
-[ ] exact packaged MCP reconstructs the complete long fixture
-[ ] built SKILL.md requires continuation through complete true
-[ ] installed version is 0.2.2 in a fresh Codex task
-[ ] host smoke reads start, middle, and end sentinels
-[ ] host smoke reports one revision and final complete true
-[ ] stale-cursor host smoke restarts cleanly
-[ ] no live corpus note or index was mutated
+[x] P21 focused suite passes
+[x] maximum serialized page size is recorded
+[x] source MCP reconstructs the complete long fixture
+[x] exact packaged MCP reconstructs the complete long fixture
+[x] built SKILL.md requires continuation through complete true
+[x] installed base version is 0.2.2 in a fresh Codex task
+[x] host smoke reads start, middle, and end sentinels
+[x] host smoke reports one revision and final complete true
+[x] stale-cursor host smoke restarts cleanly
+[x] no live corpus note or index was mutated
 ```
 
 The host smoke uses a synthetic note and temporary configuration. It must be large enough for at least three server pages; a one-call short-note check is insufficient evidence.

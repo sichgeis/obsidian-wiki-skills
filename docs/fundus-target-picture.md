@@ -370,7 +370,7 @@ completion state
 opaque next cursor when incomplete
 ```
 
-The server controls the maximum page size. A caller follows the cursor until completion and concatenates only pages with the same revision. Cursors are bound to the requested path, resolved target, revision, and next offset. If direct editing changes any bound state between pages, Fundus returns a stale-cursor error and the caller restarts from the first page.
+The server controls the maximum page size, currently 2,000 decoded characters. A caller follows the cursor until completion and concatenates only pages with the same revision. Cursors are bound to the requested path, resolved target, revision, and next offset. If direct editing changes any bound state between pages, Fundus returns a stale-cursor error and the caller restarts from the first page.
 
 Short notes still complete in one call. Long notes must never rely on silent host truncation, an arbitrary increased output limit, or an agent guessing that the visible text is complete.
 

@@ -117,6 +117,13 @@ class McpProcessIntegrationMixin:
             )
             client.notify("notifications/initialized")
             listed = client.request(2, "tools/list")
+            long_content = (
+                "START-SENTINEL\n"
+                + ("Independent Unicode Grüße 🙂 and markdown.\n" * 220)
+                + "MIDDLE-SENTINEL\n"
+                + ("Final section.\n" * 220)
+                + "END-SENTINEL\n"
+            )
             called = client.request(
                 3,
                 "tools/call",
@@ -124,12 +131,35 @@ class McpProcessIntegrationMixin:
                     "name": "create_note",
                     "arguments": {
                         "title": "Independent Client Note",
-                        "content": "Unicode content: Grüße",
+                        "content": long_content,
                         "project": "demo",
                         "project_root": str(project_root),
                     },
                 },
             )
+            created = json.loads(called["result"]["content"][0]["text"])
+            read_pages: list[dict[str, Any]] = []
+            cursor: str | None = None
+            request_id = 6
+            while True:
+                arguments = {
+                    "path": created["path"],
+                    "project_root": str(project_root),
+                }
+                if cursor is not None:
+                    arguments["cursor"] = cursor
+                response = client.request(
+                    request_id,
+                    "tools/call",
+                    {"name": "read", "arguments": arguments},
+                )
+                request_id += 1
+                page = response["result"]["structuredContent"]
+                self.assertEqual(page, json.loads(response["result"]["content"][0]["text"]))
+                read_pages.append(page)
+                if page["complete"]:
+                    break
+                cursor = page["next_cursor"]
             unknown = client.request(
                 4,
                 "tools/call",
@@ -142,15 +172,24 @@ class McpProcessIntegrationMixin:
             self.assertEqual(stderr, "")
             self.assertEqual(initialized["result"]["protocolVersion"], "2025-11-25")
             self.assertIn("propose_create", {tool["name"] for tool in listed["result"]["tools"]})
-            created = json.loads(called["result"]["content"][0]["text"])
             self.assertEqual(created["path"], "Fundus/demo/independent-client-note.md")
             self.assertTrue((vault_path / created["path"]).exists())
+            exact_note = (vault_path / created["path"]).read_text()
+            self.assertGreaterEqual(len(read_pages), 3)
+            self.assertEqual("".join(page["content"] for page in read_pages), exact_note)
+            self.assertIn("START-SENTINEL", exact_note)
+            self.assertIn("MIDDLE-SENTINEL", exact_note)
+            self.assertIn("END-SENTINEL", exact_note)
+            self.assertEqual(len({page["revision"] for page in read_pages}), 1)
+            self.assertEqual(read_pages[-1]["complete"], True)
             self.assertEqual(unknown["error"]["code"], -32602)
             self.assertEqual(ping["result"], {})
             return {
                 "protocol_version": initialized["result"]["protocolVersion"],
                 "server_version": initialized["result"]["serverInfo"]["version"],
                 "tool_count": len(listed["result"]["tools"]),
+                "read_pages": len(read_pages),
+                "read_revision": read_pages[0]["revision"],
             }
 
 

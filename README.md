@@ -8,7 +8,7 @@ Existing Fundus documents can be updated by appending content, replacing a named
 Created documents keep one generated top-level title heading; duplicate matching H1 headings in supplied content are removed automatically.
 Search is accelerated by a lightweight JSON index at `{vault_path}/{fundus_dir}/.fundus-index.json`. Every search checks relevant file fingerprints, repairs changed or added records in memory, drops deleted paths, and uses the same scorer with or without an index. Old notes can be archived reversibly under `{vault_path}/{fundus_dir}/_archive/...`, with nested area paths mirrored under the archive root.
 
-Reads and search results include a SHA-256 revision. Pass that value as `--expected-revision` for overwrite-like operations so a human edit made after the read produces `REVISION_CONFLICT` without being overwritten. Fundus serializes note-plus-index writes across processes and journals multi-file moves for rollback or next-run recovery.
+Reads and search results include a SHA-256 revision. Agent-facing MCP reads return at most 2,000 decoded characters with explicit offsets, total length, completion state, and an opaque continuation cursor. Following every cursor at one stable revision reconstructs the complete note; a direct edit or redirect change returns `READ_CURSOR_STALE` and requires a restart. Pass the final stable revision as `--expected-revision` for overwrite-like operations so a human edit made after the read produces `REVISION_CONFLICT` without being overwritten. Fundus serializes note-plus-index writes across processes and journals multi-file moves for rollback or next-run recovery.
 
 Proposal-first create/update detects duplicate titles, IDs, aliases, ticket keys, resources, and high-confidence similarity before applying. Duplicate creation requires an explicit override plus every reviewed candidate path. Notes can record `verified_against`, `source_fingerprint`, and `verification_status`; use the dedicated stale and verification operations to keep evidence lifecycle visible.
 
@@ -129,7 +129,7 @@ The launcher prefers `python3` and falls back to `python`, while the server itse
 python dist/fundus/scripts/fundus_mcp.py --check
 ```
 
-The default MCP surface is the proposal-oriented workbench `search`, `read`, `propose_create`, `apply_create`, `propose_update`, `apply_update`, `move`, `archive`, `restore`, `mark_stale`, `verify_note`, and `doctor`. Proposals are read-only, include deterministic diffs and duplicate candidates, and bind update apply to the current revision. Each tool advertises a title, input/output schemas, and audited behavior annotations; successful results include schema-validated structured content plus text JSON compatibility, while failures include a stable machine-readable code.
+The default MCP surface is the proposal-oriented workbench `search`, `read`, `propose_create`, `apply_create`, `propose_update`, `apply_update`, `move`, `archive`, `restore`, `mark_stale`, `verify_note`, and `doctor`. `read` is a bounded lossless operation: call without a cursor, concatenate exact page content while following `next_cursor`, and stop only when `complete` is true. Proposals are read-only, include deterministic diffs and duplicate candidates, and bind update apply to the current revision. Each tool advertises a title, input/output schemas, and audited behavior annotations; successful results include schema-validated structured content plus text JSON compatibility, while failures include a stable machine-readable code.
 
 Maintenance operations remain in the CLI and can be exposed deliberately by launching `fundus_mcp.py --admin`. Immediate create/update and previous MCP names such as `scan_fundus` and `create_note` remain callable as unlisted deprecated aliases during the compatibility window. All transports share the same configuration, path, revision, redaction, locking, index, and archive application layer.
 
@@ -447,7 +447,7 @@ Fundus is licensed under the MIT License. The vendored `ruamel.yaml` 0.19.1 depe
 
 GitHub Actions runs the full suite on Python 3.11, 3.12, and 3.13 on Linux plus a Python 3.13 macOS compatibility job. A separate package job runs `task verify`, the exact packaged MCP integration, the artifact privacy scan, and the 2,000-note performance gate, then uploads the JSON performance report.
 
-The plugin manifest is the version source. Build and verification propagate and compare that version across the built manifest, runtime MCP `serverInfo`, local marketplace metadata, marketplace plugin copy, and the matching section in `RELEASE_NOTES.md`. The current release is 0.2.1.
+The plugin manifest is the version source. Build and verification propagate and compare that version across the built manifest, runtime MCP `serverInfo`, local marketplace metadata, marketplace plugin copy, and the matching section in `RELEASE_NOTES.md`. The current release is 0.2.2.
 
 ## Update Workflow
 

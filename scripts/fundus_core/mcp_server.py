@@ -66,9 +66,13 @@ def scan_fundus(
     }
 
 
-def read_note(path: str, project_root: str | None = None) -> dict[str, Any]:
+def read_note(
+    path: str,
+    cursor: str | None = None,
+    project_root: str | None = None,
+) -> dict[str, Any]:
     context = resolve_context(project_root=project_root)
-    return fundus_core.read_document_result(context.config, path)
+    return fundus_core.read_document_page(context.config, path, cursor)
 
 
 def create_note(
@@ -501,6 +505,7 @@ PARAMETER_DESCRIPTIONS = {
     "project_root": "Repository or working directory used to resolve Fundus config.",
     "area": "Explicit cross-repository Fundus area path.",
     "path": "Fundus note path relative to the vault, for example Fundus/demo/note.md.",
+    "cursor": "Opaque continuation cursor from the previous read page; omit to start or restart.",
     "title": "Human-readable note title.",
     "content": "Markdown content to create or write.",
     "tags": "Additional tags beyond configured Fundus defaults.",
@@ -630,8 +635,23 @@ WORKBENCH_OUTPUT_SCHEMAS = {
             "content": {"type": "string"},
             "revision": {"type": "string"},
             "redirected": {"type": "boolean"},
+            "offset": {"type": "integer"},
+            "next_offset": {"type": "integer"},
+            "total_characters": {"type": "integer"},
+            "complete": {"type": "boolean"},
+            "next_cursor": {"type": "string"},
         },
-        ["path", "resolved_path", "content", "revision", "redirected"],
+        [
+            "path",
+            "resolved_path",
+            "content",
+            "revision",
+            "redirected",
+            "offset",
+            "next_offset",
+            "total_characters",
+            "complete",
+        ],
     ),
     "propose_create": object_output_schema(
         {
@@ -728,7 +748,15 @@ def build_operation_registry(include_admin: bool = False) -> list[OperationSpec]
     registry: list[OperationSpec] = []
     workbench_definitions = [
         ("search", "Search Fundus", "Find current Fundus evidence in a project or area.", scan_fundus, True, False, True),
-        ("read", "Read Fundus Note", "Read a note and return content with its SHA-256 revision.", read_note, True, False, True),
+        (
+            "read",
+            "Read Fundus Note",
+            "Read one bounded note page; follow next_cursor until complete is true.",
+            read_note,
+            True,
+            False,
+            True,
+        ),
         ("propose_create", "Propose Fundus Create", "Plan a note and return duplicate candidates without writing.", propose_create, True, False, True),
         ("apply_create", "Apply Fundus Create", "Apply an integrity-checked create proposal after duplicate review.", apply_create, False, False, False),
         ("propose_update", "Propose Fundus Update", "Plan content and metadata changes with a deterministic diff.", propose_update, True, False, True),

@@ -6,7 +6,7 @@ This reference is installed with the skill for progressive disclosure. Load it o
 
 The installed plugin lists `search`, `read`, `propose_create`, `apply_create`, `propose_update`, `apply_update`, `move`, `archive`, `restore`, `mark_stale`, `verify_note`, and `doctor`. Administrative operations in this document stay available through the CLI; a deliberately launched standalone server may expose them with `fundus_mcp.py --admin`. Immediate create/update and previous normal MCP names remain unlisted compatibility aliases.
 
-MCP successes return both text JSON and schema-validated `structuredContent`. Tool failures return `isError: true` plus structured `error` and stable `code` fields.
+MCP successes return both text JSON and schema-validated `structuredContent`. `read` returns at most 2,000 decoded characters per page with `offset`, `next_offset`, `total_characters`, `complete`, and `next_cursor` when incomplete. Follow every cursor and concatenate only pages with the same path, target, and revision. Tool failures return `isError: true` plus structured `error` and stable `code` fields; `READ_CURSOR_STALE` means discard collected pages and restart.
 
 ## Configuration and doctor
 
@@ -29,7 +29,11 @@ python /path/to/fundus/scripts/fundus.py scan --query "BACKEND-2242 retry budget
 python /path/to/fundus/scripts/fundus.py scan --area "Epics/AI Agent Templates" --query "story map"
 python /path/to/fundus/scripts/fundus.py scan --include-archived --query "old decision"
 python /path/to/fundus/scripts/fundus.py read --path "Fundus/my-project/authentication-flow.md"
+python /path/to/fundus/scripts/fundus.py read --path "Fundus/my-project/large-note.md" --paged
+python /path/to/fundus/scripts/fundus.py read --path "Fundus/my-project/large-note.md" --paged --cursor "CURSOR_FROM_PREVIOUS_PAGE"
 ```
+
+The first `read` form preserves the full-result CLI behavior for human and scripting compatibility. Agent fallback must use `--paged`, continue through every `next_cursor`, and stop only when `complete` is `true`. `READ_CURSOR_INVALID` requires a fresh start. `READ_CURSOR_STALE` means the note or redirect target changed; discard all collected pages and restart so revisions are never mixed.
 
 ## Create And Update
 
@@ -148,7 +152,7 @@ Add `--include-archived` only when archived notes should be normalized too. Add 
 
 ## Revisions And Conflicts
 
-`read` returns JSON containing `content`, `resolved_path`, and a `sha256:` revision. Scan results include the same revision. Pass it back to update, move, archive, restore, or add-frontmatter:
+`read` returns JSON containing `content`, `resolved_path`, and a `sha256:` revision. Paged reads repeat the same revision and path metadata on every page. Scan results include the same revision. Pass it back to update, move, archive, restore, or add-frontmatter:
 
 ```bash
 python /path/to/fundus/scripts/fundus.py update \

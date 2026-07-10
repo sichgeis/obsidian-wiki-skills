@@ -30,6 +30,13 @@
       "intent": "Check Fundus for prior context",
       "expected_operations": ["search", "read"],
       "must_not": ["apply_create", "apply_update", "mark_stale"]
+    },
+    {
+      "name": "long-read-requires-completion",
+      "intent": "Read and summarize a Fundus note whose first page is incomplete",
+      "expected_operations": ["read"],
+      "expected_completion": true,
+      "must_not": ["summarize_before_complete", "stop_with_next_cursor", "combine_revisions"]
     }
   ]
 }

@@ -10,6 +10,8 @@ Agent behavior:
 
 - Scan active Fundus notes for `BACKEND-2291`.
 - Read the strongest match if the scan result is directly relevant.
+- Follow every `next_cursor`, retaining only one stable path, target, and revision, until `complete: true`.
+- If continuation returns `READ_CURSOR_STALE`, discard partial content and restart before summarizing.
 - Return a compact answer.
 - Mention the note title/path briefly.
 - If nothing relevant exists, say that no relevant Fundus note was found.

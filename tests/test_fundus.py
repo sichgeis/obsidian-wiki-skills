@@ -1252,6 +1252,142 @@ class BackupTest(FundusTestCase):
         self.assertFalse(any(fundus.BACKUP_DIRNAME in file["path"] for file in manifest["files"]))
 
 
+class ReadPaginationTest(FundusTestCase):
+    def write_note(self, text: str, name: str = "article.md") -> tuple[str, Path]:
+        path = self.path.parent / name
+        path.write_bytes(text.encode("utf-8"))
+        return str(path.relative_to(self.vault_path)), path
+
+    def collect_pages(self, path: str) -> tuple[str, list[dict[str, object]]]:
+        pages: list[dict[str, object]] = []
+        cursor: str | None = None
+        while True:
+            page = fundus.read_document_page(self.config, path, cursor)
+            pages.append(page)
+            if page["complete"]:
+                return "".join(str(item["content"]) for item in pages), pages
+            cursor = str(page["next_cursor"])
+
+    def test_short_empty_and_exact_boundary_notes_report_completion(self) -> None:
+        fixtures = {
+            "empty.md": "",
+            "short.md": "Short Grüße note.\n",
+            "exact.md": "x" * fundus.READ_PAGE_MAX_CHARACTERS,
+            "over.md": "x" * (fundus.READ_PAGE_MAX_CHARACTERS + 1),
+        }
+        for name, content in fixtures.items():
+            with self.subTest(name=name):
+                relative, _ = self.write_note(content, name)
+                reconstructed, pages = self.collect_pages(relative)
+
+                self.assertEqual(reconstructed, content)
+                self.assertEqual(pages[-1]["complete"], True)
+                self.assertNotIn("next_cursor", pages[-1])
+                self.assertEqual(pages[-1]["total_characters"], len(content))
+                self.assertEqual(len(pages), 2 if name == "over.md" else 1)
+
+    def test_long_unicode_bom_crlf_and_long_line_reconstruct_exact_text(self) -> None:
+        content = (
+            "\ufeff---\r\ntitle: Complete Read\r\n---\r\n"
+            "START-SENTINEL\r\n"
+            + ("ü🙂\\\"" * 700)
+            + "\r\n"
+            + ("one-unbroken-line-" * 300)
+            + "\r\nMIDDLE-SENTINEL\r\n"
+            + ("終" * 2500)
+            + "\r\nEND-SENTINEL\r\n"
+        )
+        relative, _ = self.write_note(content, "long.md")
+
+        reconstructed, pages = self.collect_pages(relative)
+
+        self.assertGreaterEqual(len(pages), 3)
+        self.assertEqual(reconstructed, content)
+        self.assertEqual(fundus.read_document_result(self.config, relative)["content"], content)
+        revision = pages[0]["revision"]
+        for index, page in enumerate(pages):
+            self.assertEqual(page["path"], relative)
+            self.assertEqual(page["resolved_path"], relative)
+            self.assertEqual(page["redirected"], False)
+            self.assertEqual(page["revision"], revision)
+            self.assertEqual(page["total_characters"], len(content))
+            self.assertEqual(page["offset"], index * fundus.READ_PAGE_MAX_CHARACTERS)
+            self.assertEqual(page["next_offset"], min((index + 1) * fundus.READ_PAGE_MAX_CHARACTERS, len(content)))
+
+    def test_cursor_rejects_malformed_tampered_cross_note_and_out_of_range_values(self) -> None:
+        first_relative, _ = self.write_note("a" * (fundus.READ_PAGE_MAX_CHARACTERS * 2), "first.md")
+        second_relative, _ = self.write_note("b" * (fundus.READ_PAGE_MAX_CHARACTERS * 2), "second.md")
+        first_page = fundus.read_document_page(self.config, first_relative)
+        cursor = str(first_page["next_cursor"])
+
+        invalid_cursors = ["not-a-cursor", cursor[:-1] + ("A" if cursor[-1] != "A" else "B")]
+        for invalid in invalid_cursors:
+            with self.subTest(cursor=invalid[:12]):
+                with self.assertRaises(fundus.FundusError) as raised:
+                    fundus.read_document_page(self.config, first_relative, invalid)
+                self.assertEqual(raised.exception.code, "READ_CURSOR_INVALID")
+
+        with self.assertRaises(fundus.FundusError) as cross_note:
+            fundus.read_document_page(self.config, second_relative, cursor)
+        self.assertEqual(cross_note.exception.code, "READ_CURSOR_INVALID")
+
+        payload = fundus._decode_read_cursor(cursor)
+        for offset in (0, -1, len("a" * (fundus.READ_PAGE_MAX_CHARACTERS * 2))):
+            invalid_payload = {**payload, "offset": offset}
+            with self.subTest(offset=offset):
+                with self.assertRaises(fundus.FundusError) as raised:
+                    fundus.read_document_page(
+                        self.config,
+                        first_relative,
+                        fundus._encode_read_cursor(invalid_payload),
+                    )
+                self.assertEqual(raised.exception.code, "READ_CURSOR_INVALID")
+
+        unsupported = {**payload, "version": fundus.READ_CURSOR_VERSION + 1}
+        with self.assertRaises(fundus.FundusError) as version_error:
+            fundus.read_document_page(self.config, first_relative, fundus._encode_read_cursor(unsupported))
+        self.assertEqual(version_error.exception.code, "READ_CURSOR_INVALID")
+
+        bad_revision = {**payload, "revision": "sha256:not-a-digest"}
+        with self.assertRaises(fundus.FundusError) as revision_error:
+            fundus.read_document_page(self.config, first_relative, fundus._encode_read_cursor(bad_revision))
+        self.assertEqual(revision_error.exception.code, "READ_CURSOR_INVALID")
+
+    def test_external_edit_makes_cursor_stale_and_fresh_read_uses_new_revision(self) -> None:
+        original = "old-" * (fundus.READ_PAGE_MAX_CHARACTERS * 2)
+        relative, path = self.write_note(original, "edited.md")
+        first_page = fundus.read_document_page(self.config, relative)
+        path.write_text("new-" * (fundus.READ_PAGE_MAX_CHARACTERS * 2))
+
+        with self.assertRaises(fundus.FundusError) as stale:
+            fundus.read_document_page(self.config, relative, str(first_page["next_cursor"]))
+
+        self.assertEqual(stale.exception.code, "READ_CURSOR_STALE")
+        reconstructed, pages = self.collect_pages(relative)
+        self.assertEqual(reconstructed, path.read_text())
+        self.assertNotEqual(pages[0]["revision"], first_page["revision"])
+
+    def test_redirect_pages_stay_bound_to_requested_path_and_target(self) -> None:
+        target_a, _ = self.write_note("same" * (fundus.READ_PAGE_MAX_CHARACTERS * 2), "target-a.md")
+        target_b, _ = self.write_note("same" * (fundus.READ_PAGE_MAX_CHARACTERS * 2), "target-b.md")
+        redirect, redirect_path = self.write_note(
+            f"---\ntype: Redirect\nredirect_to: {target_a}\n---\n",
+            "redirect.md",
+        )
+        reconstructed, pages = self.collect_pages(redirect)
+
+        self.assertEqual(reconstructed, (self.vault_path / target_a).read_text())
+        self.assertGreaterEqual(len(pages), 3)
+        self.assertTrue(all(page["path"] == redirect for page in pages))
+        self.assertTrue(all(page["resolved_path"] == target_a for page in pages))
+        self.assertTrue(all(page["redirected"] is True for page in pages))
+
+        redirect_path.write_text(f"---\ntype: Redirect\nredirect_to: {target_b}\n---\n")
+        with self.assertRaises(fundus.FundusError) as stale:
+            fundus.read_document_page(self.config, redirect, str(pages[0]["next_cursor"]))
+        self.assertEqual(stale.exception.code, "READ_CURSOR_STALE")
+
+
 class MutationSafetyTest(FundusTestCase):
     def create_article(self, title: str, body: str = "Body") -> tuple[dict[str, object], Path]:
         result = fundus.create_document(self.config, "demo", title, body, ["ticket"])
