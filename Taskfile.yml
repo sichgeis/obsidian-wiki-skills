@@ -184,16 +184,6 @@ tasks:
       - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" -m unittest discover -s tests
 
   verify:codex:
-    desc: Verify the Codex installation
+    desc: Verify the enabled versioned Codex plugin installation
     cmds:
-      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/SKILL.md"
-      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/config.json"
-      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/requirements.txt"
-      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/agents/openai.yaml"
-      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/docs/reference/fundus-cli-reference.md"
-      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/docs/reference/fundus-workbench-examples.md"
-      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py"
-      - test -f "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py"
-      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus.py" --help
-      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py" --help
-      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" "{{.CODEX_SKILLS_DIR}}/{{.SKILL_NAME}}/scripts/fundus_mcp.py" --check
+      - PYTHONDONTWRITEBYTECODE=1 "{{.PYTHON}}" scripts/verify_codex_plugin_install.py

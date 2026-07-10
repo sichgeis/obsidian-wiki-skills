@@ -642,6 +642,8 @@ Use temporary vaults for every automated migration test. Cover:
 
 Before a live apply, rehearse the exact policy and semantic manifest on a disposable vault copy. Immediately before apply, create and verify a new live backup. After apply, compare corpus counts and stable IDs, verify the index, search representative scopes, inspect all rewrites, and confirm no previously resolving local link is broken.
 
+After plugin installation, `task verify:codex` must inspect the newest versioned cache entry matching the source release, confirm `fundus@fundus-local` is installed and enabled at that exact cache-busted version, validate required packaged files, and construct the installed MCP server. It must not depend on the retired direct-skill path under `~/.codex/skills`.
+
 ## Required evidence format
 
 A phase cannot be marked done with “tests pass” alone. Record:

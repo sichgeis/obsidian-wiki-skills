@@ -1,6 +1,6 @@
 # Fundus 0.2.3 Area Layout Migration
 
-Status: release and install in progress
+Status: complete
 Date: 2026-07-10
 Branch: `codex/fundus-0-2-3-lean-areas`
 Baseline: `75090fe` (`v0.2.2`)
@@ -119,7 +119,7 @@ Apply must:
 | Runtime and tests | completed | 16 focused tests and 146-test full verification pass; P23 review complete |
 | Disposable-vault rehearsal | completed | Proposal `sha256:4579…cf1ee`; 26 moves, 4 absorptions, 103 links; final corpus/index checks pass |
 | Live backup and apply | completed | Two verified backups; live 26-move/4-absorption apply and 103 link rewrites verified |
-| Release and install | in_progress | 0.2.3 package, tag, install, and fresh-host smoke verified |
+| Release and install | completed | 0.2.3 package, tag, cache-busted install, verifier, and fresh-host smoke pass |
 
 Exactly one stage may be `in_progress`. Update this table and the implementation tracker at every stage boundary.
 
@@ -131,4 +131,4 @@ Rollback immediately if apply reports a journal failure, active documents or sta
 
 ## Current next action
 
-Run the complete 0.2.3 release gate, inspect the built artifacts, commit and push the release, tag it, install through the cache-buster flow, and run a fresh disposable-vault host smoke.
+No implementation action remains. Integrate the dedicated branch into `main` only when explicitly requested.

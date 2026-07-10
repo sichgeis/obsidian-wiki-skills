@@ -1,9 +1,9 @@
 # Fundus Agent Implementation Tracker
 
-Status: Fundus 0.2.3 live migration and release active
+Status: Fundus 0.2.3 lean-area patch complete
 Date: 2026-07-10
 Current iteration: P23-P24
-First active phase: P24
+First active phase: none
 
 ## Agent read order
 
@@ -131,7 +131,7 @@ Decisions for the next iteration:
 | P21 — Lossless complete-note reads | done | critical | P17, P20 |
 | P22 — Fundus 0.2.2 release validation | done | high | P21 |
 | P23 — Lean content-driven areas and safe layout migration | done | critical | P14, P16, P18 |
-| P24 — Live vault migration and Fundus 0.2.3 release | in_progress | critical | P23 |
+| P24 — Live vault migration and Fundus 0.2.3 release | done | critical | P23 |
 
 P23 and P24 are deliberately sequential. Complete and verify the migration engine on disposable vaults before creating a current live-vault backup or applying P24.
 
@@ -1313,7 +1313,7 @@ docs/
 
 ## P24 — Live vault migration and Fundus 0.2.3 release
 
-Status: in_progress
+Status: done
 
 ### Goal
 
@@ -1329,16 +1329,16 @@ Use the verified proposal-first workflow to simplify the authorized live Fundus 
 - [x] Verify active/archive counts, stable IDs, corpus invariants, search, index freshness, all rewritten links, and no newly broken local links.
 - [x] Create or update the durable Fundus production note through proposal/apply and record backup, proposal, verification, and rollback evidence.
 - [x] Update version and release notes to 0.2.3 only after the live migration succeeds.
-- [ ] Run `task verify`, build and inspect the package, install through the cache-buster workflow, and run a fresh-host smoke against a disposable vault.
-- [ ] Commit and push every stage, create and push annotated tag `v0.2.3`, and leave the dedicated branch clean and reviewable without merging it into `main`.
+- [x] Run `task verify`, build and inspect the package, install through the cache-buster workflow, and run a fresh-host smoke against a disposable vault.
+- [x] Commit and push every stage, create and push annotated tag `v0.2.3`, and leave the dedicated branch clean and reviewable without merging it into `main`.
 
 ### Acceptance criteria
 
 - [x] The live vault matches the approved lean target matrix and retains all intended knowledge.
 - [x] A verified pre-apply backup and an actionable rollback point exist.
 - [x] Live corpus, index, search, and link checks pass after migration.
-- [ ] Source, build, marketplace, installed cache, MCP server info, README, and release notes all report 0.2.3.
-- [ ] The installed plugin passes the disposable-vault host smoke and the release branch/tag are pushed.
+- [x] Source, build, marketplace, installed cache, MCP server info, README, and release notes all report 0.2.3.
+- [x] The installed plugin passes the disposable-vault host smoke and the release branch/tag are pushed.
 
 ### Rehearsal evidence — 2026-07-10
 
@@ -1359,6 +1359,18 @@ Use the verified proposal-first workflow to simplify the authorized live Fundus 
 - Post-curation corpus verification passed at 219 documents (156 active, 63 archived). The durable production record was then created through proposal/apply, producing the final 220-document corpus (157 active, 63 archived, 32 reserved, 125 active concepts) with a current index and no issues.
 - Durable record: `Fundus/Operations/Fundus Production/fundus-0-2-3-lean-area-migration.md` at creation revision `sha256:41b214e82d04c823df3b26d372fccea43d10f1826f0c81c0a86600bb060063e2`.
 - A follow-up global layout plan is idempotent: zero moves, absorptions, rewrites, collisions, warnings, or new broken links.
+
+### Release and installation evidence — 2026-07-10
+
+- Release candidate commit `aef2201` was pushed on the dedicated branch after the live migration completed.
+- `task verify` at source version 0.2.3 passed package validation, documentation/release consistency, temporary-vault release smoke, four independent MCP integration clients, and 148 discovered tests with one intentional skip.
+- Built source, plugin, marketplace manifest/copy, packaged skill, MCP server info, README, and release notes all report base version 0.2.3.
+- `task install` used the plugin-creator cache-buster flow and installed/enabled `fundus@fundus-local` as `0.2.3+codex.20260710214750`.
+- Installed cache: `/Users/christian/.codex/plugins/cache/fundus-local/fundus/0.2.3+codex.20260710214750`; its manifest, skill, references, release notes, and MCP construction were inspected successfully.
+- A fresh Codex 0.144.1 task loaded that exact installed skill and cache, used only a disposable project/vault, initialized `Epics/Lean Host Smoke` with only `overview.md`, read it successfully, confirmed no optional reserved files or legacy folders, and produced a zero-move/collision/warning global layout plan.
+- The fresh task logged unrelated expired OAuth warnings for other configured MCP services; Fundus CLI fallback and the smoke result were unaffected.
+- `task verify:codex` was corrected to validate the enabled versioned plugin cache instead of the retired direct-skill directory and now passes for the exact installed version.
+- The completion commit and annotated `v0.2.3` tag are pushed on `codex/fundus-0-2-3-lean-areas`; `main` was not merged or modified.
 
 ---
 
